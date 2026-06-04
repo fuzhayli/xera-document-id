@@ -1005,6 +1005,28 @@ p {
   color: var(--primary);
 }
 
+.danger-btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 1px solid rgba(201, 31, 47, .28);
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: none;
+  transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+
+.danger-btn:hover {
+  border-color: var(--danger);
+  background: #ffe5e9;
+}
+
 .compact-btn {
   min-height: 32px;
   padding: 0 10px;
@@ -1254,6 +1276,10 @@ table {
   min-width: 1280px;
 }
 
+.deleted-items-table {
+  min-width: 1180px;
+}
+
 th,
 td {
   min-height: 50px;
@@ -1279,6 +1305,15 @@ td {
 
 tbody tr:hover td {
   background: #fffafb;
+}
+
+tbody tr.clickable-row {
+  cursor: pointer;
+}
+
+tbody tr.clickable-row:focus-within td,
+tbody tr.clickable-row:hover td {
+  background: var(--primary-soft);
 }
 
 tbody tr:last-child td {
@@ -1926,6 +1961,32 @@ tbody tr:last-child td {
   height: 100%;
   border: 0;
   background: var(--surface);
+}
+
+.action-modal-panel {
+  grid-template-rows: auto auto;
+  width: min(560px, 94vw);
+  height: auto;
+}
+
+.action-modal-body {
+  display: grid;
+  gap: 16px;
+  padding: 22px 24px 24px;
+}
+
+.delete-confirm-box {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(201, 31, 47, .22);
+  border-radius: 8px;
+  background: var(--danger-soft);
+}
+
+.delete-confirm-box p {
+  color: var(--danger);
+  font-weight: 800;
 }
 
 .modal-open {

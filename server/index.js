@@ -277,6 +277,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, result);
     }
 
+    const deletePartMatch = url.pathname.match(/^\/api\/admin\/parts\/(\d+)\/delete$/);
+    if (req.method === "POST" && deletePartMatch) {
+      const user = await requirePermission(req, "part_admin");
+      const partId = Number(deletePartMatch[1]);
+      const body = await readJson(req);
+      const result = await deletePartRecord(partId, user, body);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/parts") {
       return sendJson(res, 200, { parts: await listPartRecords({ includePendingRevision: true }) });
     }
@@ -418,6 +427,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, result);
     }
 
+    const deleteDocumentMatch = url.pathname.match(/^\/api\/admin\/documents\/(\d+)\/delete$/);
+    if (req.method === "POST" && deleteDocumentMatch) {
+      const user = await requirePermission(req, "document_admin");
+      const documentId = Number(deleteDocumentMatch[1]);
+      const body = await readJson(req);
+      const result = await deleteDocumentRecord(documentId, user, body);
+      return sendJson(res, 200, result);
+    }
+
     const renameDocumentMatch = url.pathname.match(/^\/api\/admin\/documents\/(\d+)\/rename$/);
     if (req.method === "POST" && renameDocumentMatch) {
       const user = await requirePermission(req, "document_admin");
@@ -484,6 +502,11 @@ const server = http.createServer(async (req, res) => {
         LIMIT ?
       `).all(limit);
       return sendJson(res, 200, { admin: user.display_name, audit_logs: rows });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/deleted-items") {
+      const user = await requireAnyAdmin(req);
+      return sendJson(res, 200, { admin: user.display_name, items: await listDeletedItems(user, url.searchParams.get("type")) });
     }
 
     if (req.method === "GET" && url.pathname === "/api/admin/tasks/summary") {
@@ -694,7 +717,9 @@ async function initializeDatabase() {
       approved_by_user_id INTEGER NOT NULL REFERENCES users(id),
       approved_at TEXT NOT NULL,
       revision_updated_by_user_id INTEGER REFERENCES users(id),
-      revision_updated_at TEXT
+      revision_updated_at TEXT,
+      deleted_at TEXT,
+      deleted_by_user_id INTEGER REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS document_revision_archive (
@@ -784,7 +809,9 @@ async function initializeDatabase() {
       requested_by_user_id INTEGER REFERENCES users(id),
       approved_by_user_id INTEGER REFERENCES users(id),
       approved_at TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      deleted_at TEXT,
+      deleted_by_user_id INTEGER REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS part_revision_requests (
@@ -828,6 +855,16 @@ async function initializeDatabase() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS deleted_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL CHECK (entity_type IN ('document', 'part')),
+      entity_id INTEGER NOT NULL,
+      display_key TEXT NOT NULL,
+      record_json TEXT NOT NULL,
+      deleted_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      deleted_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       recipient_user_id INTEGER NOT NULL REFERENCES users(id),
@@ -856,7 +893,14 @@ async function initializeDatabase() {
   await backfillUserPermissions();
   await ensureColumn("document_records", "revision_updated_by_user_id", "INTEGER REFERENCES users(id)");
   await ensureColumn("document_records", "revision_updated_at", "TEXT");
+  await ensureColumn("document_records", "deleted_at", "TEXT");
+  await ensureColumn("document_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
+  await ensureColumn("part_records", "deleted_at", "TEXT");
+  await ensureColumn("part_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_document_records_deleted ON document_records(deleted_at);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_deleted ON part_records(deleted_at);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_type_deleted ON deleted_items(entity_type, deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_project_main ON part_records(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_project_main ON part_requests(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_status ON part_requests(status);");
@@ -1771,9 +1815,10 @@ async function listPartArchive() {
 
   return rows
     .filter(row => {
+      if (row.deleted_at) return false;
       const key = `${row.project_code}:${row.main_code}:${row.sequence_no}`;
       const latest = latestByBase.get(key);
-      return latest && latest.part_number !== row.part_number;
+      return latest && !latest.deleted_at && latest.part_number !== row.part_number;
     })
     .map(row => {
       const key = `${row.project_code}:${row.main_code}:${row.sequence_no}`;
@@ -1785,6 +1830,45 @@ async function listPartArchive() {
       };
     })
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+}
+
+async function deletePartRecord(partId, user, body = {}) {
+  requireDeleteConfirmation(body);
+
+  const before = await getPartRecordById(partId);
+  if (!before) throw httpError(404, "not_found", "Part record not found.");
+
+  const now = nowIso();
+  return await db.transaction(async () => {
+    await db.prepare(`
+      UPDATE part_revision_requests
+      SET status = 'rejected',
+          reject_reason = 'Source part was deleted.',
+          decided_by_user_id = ?,
+          decided_at = ?,
+          updated_at = ?
+      WHERE part_record_id = ?
+        AND status = 'pending'
+    `).run(user.id, now, now, partId);
+
+    await db.prepare(`
+      UPDATE part_records
+      SET deleted_at = ?,
+          deleted_by_user_id = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `).run(now, user.id, partId);
+
+    const after = {
+      ...before,
+      deleted_at: now,
+      deleted_by_user_id: user.id,
+      deleted_by: user.display_name
+    };
+    const deletedItem = await insertDeletedItem("part", partId, before.part_number, before, user, now);
+    await insertAudit(user.id, "part_record", partId, "part.deleted", before, after);
+    return { deleted_item: deletedItem };
+  });
 }
 
 async function listPartStandardHardware() {
@@ -1804,11 +1888,11 @@ async function getPartRevisionRequestById(id) {
 }
 
 async function getPartRecordById(id) {
-  return await db.prepare("SELECT * FROM part_records WHERE id = ?").get(id);
+  return await db.prepare("SELECT * FROM part_records WHERE id = ? AND deleted_at IS NULL").get(id);
 }
 
 async function getPartRecordByRequestId(requestId) {
-  return await db.prepare("SELECT * FROM part_records WHERE request_id = ?").get(requestId);
+  return await db.prepare("SELECT * FROM part_records WHERE request_id = ? AND deleted_at IS NULL").get(requestId);
 }
 
 function buildPartNumber(input, sequenceNo) {
@@ -1832,7 +1916,10 @@ function filterCurrentPartRecords(rows) {
   }
 
   return rows
-    .filter(row => !hasPartBase(row) || latestByBase.get(partBaseKey(row)).id === row.id)
+    .filter(row => {
+      if (row.deleted_at) return false;
+      return !hasPartBase(row) || latestByBase.get(partBaseKey(row)).id === row.id;
+    })
     .map(row => ({ ...row, is_current: 1 }));
 }
 
@@ -3135,11 +3222,11 @@ async function getRequestById(id) {
 }
 
 async function getDocumentById(id) {
-  return await db.prepare("SELECT * FROM document_records WHERE id = ?").get(id);
+  return await db.prepare("SELECT * FROM document_records WHERE id = ? AND deleted_at IS NULL").get(id);
 }
 
 async function getDocumentByRequestId(requestId) {
-  return await db.prepare("SELECT * FROM document_records WHERE request_id = ?").get(requestId);
+  return await db.prepare("SELECT * FROM document_records WHERE request_id = ? AND deleted_at IS NULL").get(requestId);
 }
 
 async function listCurrentDocuments(options = {}) {
@@ -3163,6 +3250,7 @@ async function listCurrentDocuments(options = {}) {
     FROM document_records dr
     LEFT JOIN users au ON au.id = dr.approved_by_user_id
     LEFT JOIN users ru ON ru.id = dr.revision_updated_by_user_id
+    WHERE dr.deleted_at IS NULL
     ORDER BY dr.approved_at DESC, dr.id DESC
   `).all();
 }
@@ -3175,6 +3263,107 @@ async function listRevisionArchive() {
     LEFT JOIN users au ON au.id = dra.approved_by_user_id
     ORDER BY dra.revision_changed_at DESC, dra.id DESC
   `).all();
+}
+
+async function deleteDocumentRecord(documentId, user, body = {}) {
+  requireDeleteConfirmation(body);
+
+  const before = await getDocumentById(documentId);
+  if (!before) throw httpError(404, "not_found", "Document record not found.");
+
+  const now = nowIso();
+  return await db.transaction(async () => {
+    await db.prepare(`
+      UPDATE document_revision_requests
+      SET status = 'rejected',
+          reject_reason = 'Source document was deleted.',
+          decided_by_user_id = ?,
+          decided_at = ?,
+          updated_at = ?
+      WHERE document_record_id = ?
+        AND status = 'pending'
+    `).run(user.id, now, now, documentId);
+
+    await db.prepare(`
+      UPDATE document_records
+      SET deleted_at = ?,
+          deleted_by_user_id = ?
+      WHERE id = ?
+        AND deleted_at IS NULL
+    `).run(now, user.id, documentId);
+
+    const after = {
+      ...before,
+      deleted_at: now,
+      deleted_by_user_id: user.id,
+      deleted_by: user.display_name
+    };
+    const deletedItem = await insertDeletedItem("document", documentId, before.document_no, before, user, now);
+    await insertAudit(user.id, "document_record", documentId, "document.deleted", before, after);
+    return { deleted_item: deletedItem };
+  });
+}
+
+function requireDeleteConfirmation(body) {
+  if (body.confirm !== true) {
+    throw httpError(422, "delete_confirmation_required", "Please confirm that you want to delete this record.");
+  }
+}
+
+async function insertDeletedItem(entityType, entityId, displayKey, record, user, deletedAt) {
+  const result = await db.prepare(`
+    INSERT INTO deleted_items (
+      entity_type, entity_id, display_key, record_json, deleted_by_user_id, deleted_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    entityType,
+    entityId,
+    displayKey,
+    JSON.stringify(record),
+    user.id,
+    deletedAt
+  );
+
+  return await getDeletedItemById(Number(result.lastInsertRowid));
+}
+
+async function getDeletedItemById(id) {
+  const row = await db.prepare(`
+    SELECT di.*, u.display_name AS deleted_by
+    FROM deleted_items di
+    LEFT JOIN users u ON u.id = di.deleted_by_user_id
+    WHERE di.id = ?
+  `).get(id);
+  return normalizeDeletedItem(row);
+}
+
+async function listDeletedItems(user, requestedType = "") {
+  const allowedTypes = [];
+  if (userHasPermission(user, "document_admin")) allowedTypes.push("document");
+  if (userHasPermission(user, "part_admin")) allowedTypes.push("part");
+  const type = String(requestedType || "").trim().toLowerCase();
+  const types = type ? allowedTypes.filter(allowedType => allowedType === type) : allowedTypes;
+  if (types.length === 0) return [];
+
+  const placeholders = types.map(() => "?").join(", ");
+  const rows = await db.prepare(`
+    SELECT di.*, u.display_name AS deleted_by
+    FROM deleted_items di
+    LEFT JOIN users u ON u.id = di.deleted_by_user_id
+    WHERE di.entity_type IN (${placeholders})
+    ORDER BY di.deleted_at DESC, di.id DESC
+  `).all(...types);
+
+  return rows.map(normalizeDeletedItem).filter(Boolean);
+}
+
+function normalizeDeletedItem(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    record: safeParseJson(row.record_json) || {}
+  };
 }
 
 async function listMyNotifications(user) {

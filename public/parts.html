@@ -43,6 +43,7 @@
           <input type="file" id="importFileInput" accept=".xlsx" class="hidden">
           <a class="secondary-btn export-link" href="/api/parts/export.xlsx">Export Excel</a>
           <a class="secondary-btn" href="/parts-archive.html">Archive</a>
+          <a class="secondary-btn hidden" id="deletedItemsLink" href="/deleted-items.html?type=part">Deleted Items</a>
           <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
         </div>
       </div>
@@ -111,7 +112,6 @@
         <table class="parts-table">
           <thead>
             <tr>
-              <th>Actions</th>
               <th>Part Number</th>
               <th>Part Name</th>
               <th>Description</th>
@@ -120,7 +120,7 @@
             </tr>
           </thead>
           <tbody id="partsBody">
-            <tr><td colspan="6" class="empty-cell">No parts</td></tr>
+            <tr><td colspan="5" class="empty-cell">No parts</td></tr>
           </tbody>
         </table>
       </div>
@@ -163,6 +163,32 @@
         <button class="secondary-btn" id="closePartRequestModalBtn" type="button">Close</button>
       </header>
       <iframe id="partRequestFrame" title="Part Code Request Form"></iframe>
+    </section>
+  </div>
+
+  <div class="modal hidden" id="partActionModal" role="dialog" aria-modal="true" aria-labelledby="partActionTitle">
+    <div class="modal-backdrop" id="partActionBackdrop"></div>
+    <section class="modal-panel action-modal-panel">
+      <header class="modal-head">
+        <div>
+          <h2 id="partActionTitle">Part Actions</h2>
+          <p id="partActionMeta">Choose an action for this part.</p>
+        </div>
+        <button class="secondary-btn" id="closePartActionBtn" type="button">Close</button>
+      </header>
+      <div class="action-modal-body">
+        <div class="action-row">
+          <button class="secondary-btn" id="partRevisionRequestBtn" type="button">Revision Request</button>
+          <button class="danger-btn" id="partDeleteBtn" type="button">Delete</button>
+        </div>
+        <div class="delete-confirm-box hidden" id="partDeleteConfirm">
+          <p>Silmek istediğinizden emin misiniz?</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="cancelPartDeleteBtn" type="button">Cancel</button>
+            <button class="danger-btn" id="confirmPartDeleteBtn" type="button">Yes, delete</button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 

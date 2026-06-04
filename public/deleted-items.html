@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Deleted Items</title>
+  <script src="/protected-boot.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.png" alt="XERA"></div>
+      <div>
+        <h1>Deleted Items</h1>
+        <p>Admin-only backup list for deleted documents and parts</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span id="currentAdminName">Admin</span>
+      <a class="top-link" href="/documents.html">Document List</a>
+      <a class="top-link" href="/parts.html">Parts List</a>
+      <a class="top-link" href="/">User Panel</a>
+    </div>
+  </header>
+
+  <main class="documents-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Filters</h2>
+          <p id="deletedState">Deleted records are retained here as JSON-backed snapshots.</p>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <form class="filter-form" id="filterForm">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" autocomplete="off" placeholder="Document no, part number, name, deleted by">
+        </label>
+
+        <label class="field">
+          <span>Type</span>
+          <select id="typeFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+
+        <button class="secondary-btn" id="clearFiltersBtn" type="button">Clear</button>
+      </form>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Deleted Records</h2>
+          <p id="deletedCount">0 records</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="deleted-items-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Record</th>
+              <th>Name</th>
+              <th>Details</th>
+              <th>Deleted By</th>
+              <th>Deleted At</th>
+            </tr>
+          </thead>
+          <tbody id="deletedBody">
+            <tr><td colspan="6" class="empty-cell">No deleted records</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/deleted-items.js"></script>
+</body>
+</html>

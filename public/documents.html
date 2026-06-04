@@ -42,6 +42,7 @@
           <button class="primary-btn" id="openRequestModalPanelBtn" type="button">Document ID Request</button>
           <a class="secondary-btn export-link" href="/api/documents/export.xlsx">Export Excel</a>
           <a class="secondary-btn" href="/archive.html">Archive</a>
+          <a class="secondary-btn hidden" id="deletedItemsLink" href="/deleted-items.html?type=document">Deleted Items</a>
           <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
         </div>
       </div>
@@ -90,7 +91,6 @@
         <table>
           <thead>
             <tr>
-              <th>Actions</th>
               <th>Document No</th>
               <th>Category</th>
               <th>Year</th>
@@ -106,7 +106,7 @@
             </tr>
           </thead>
           <tbody id="documentsBody">
-            <tr><td colspan="13" class="empty-cell">No official documents</td></tr>
+            <tr><td colspan="12" class="empty-cell">No official documents</td></tr>
           </tbody>
         </table>
       </div>
@@ -124,6 +124,32 @@
         <button class="secondary-btn" id="closeRequestModalBtn" type="button">Close</button>
       </header>
       <iframe id="requestFrame" title="Document ID Request Form"></iframe>
+    </section>
+  </div>
+
+  <div class="modal hidden" id="documentActionModal" role="dialog" aria-modal="true" aria-labelledby="documentActionTitle">
+    <div class="modal-backdrop" id="documentActionBackdrop"></div>
+    <section class="modal-panel action-modal-panel">
+      <header class="modal-head">
+        <div>
+          <h2 id="documentActionTitle">Document Actions</h2>
+          <p id="documentActionMeta">Choose an action for this document.</p>
+        </div>
+        <button class="secondary-btn" id="closeDocumentActionBtn" type="button">Close</button>
+      </header>
+      <div class="action-modal-body">
+        <div class="action-row">
+          <button class="secondary-btn" id="documentRevisionRequestBtn" type="button">Revision Request</button>
+          <button class="danger-btn" id="documentDeleteBtn" type="button">Delete</button>
+        </div>
+        <div class="delete-confirm-box hidden" id="documentDeleteConfirm">
+          <p>Silmek istediğinizden emin misiniz?</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="cancelDocumentDeleteBtn" type="button">Cancel</button>
+            <button class="danger-btn" id="confirmDocumentDeleteBtn" type="button">Yes, delete</button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 

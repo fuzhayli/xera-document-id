@@ -1,7 +1,9 @@
 const state = {
   parts: [],
   hardware: [],
-  activeTab: "materials"
+  activeTab: "materials",
+  currentUser: null,
+  selectedPart: null
 };
 
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
@@ -45,13 +47,24 @@ const elements = {
   hardwareBody: document.getElementById("hardwareBody"),
   importBtn: document.getElementById("importBtn"),
   importFileInput: document.getElementById("importFileInput"),
+  deletedItemsLink: document.getElementById("deletedItemsLink"),
   messageBox: document.getElementById("messageBox"),
   openPartRequestTopBtn: document.getElementById("openPartRequestTopBtn"),
   openPartRequestBtn: document.getElementById("openPartRequestBtn"),
   partRequestModal: document.getElementById("partRequestModal"),
   partRequestModalBackdrop: document.getElementById("partRequestModalBackdrop"),
   closePartRequestModalBtn: document.getElementById("closePartRequestModalBtn"),
-  partRequestFrame: document.getElementById("partRequestFrame")
+  partRequestFrame: document.getElementById("partRequestFrame"),
+  partActionModal: document.getElementById("partActionModal"),
+  partActionBackdrop: document.getElementById("partActionBackdrop"),
+  closePartActionBtn: document.getElementById("closePartActionBtn"),
+  partActionTitle: document.getElementById("partActionTitle"),
+  partActionMeta: document.getElementById("partActionMeta"),
+  partRevisionRequestBtn: document.getElementById("partRevisionRequestBtn"),
+  partDeleteBtn: document.getElementById("partDeleteBtn"),
+  partDeleteConfirm: document.getElementById("partDeleteConfirm"),
+  cancelPartDeleteBtn: document.getElementById("cancelPartDeleteBtn"),
+  confirmPartDeleteBtn: document.getElementById("confirmPartDeleteBtn")
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -70,6 +83,12 @@ async function init() {
   elements.openPartRequestBtn.addEventListener("click", openPartRequestModal);
   elements.closePartRequestModalBtn.addEventListener("click", closePartRequestModal);
   elements.partRequestModalBackdrop.addEventListener("click", closePartRequestModal);
+  elements.closePartActionBtn.addEventListener("click", closePartActionModal);
+  elements.partActionBackdrop.addEventListener("click", closePartActionModal);
+  elements.partRevisionRequestBtn.addEventListener("click", submitSelectedPartRevisionRequest);
+  elements.partDeleteBtn.addEventListener("click", showPartDeleteConfirm);
+  elements.cancelPartDeleteBtn.addEventListener("click", hidePartDeleteConfirm);
+  elements.confirmPartDeleteBtn.addEventListener("click", deleteSelectedPart);
   window.addEventListener("message", handlePartRequestMessage);
   elements.partsBody.addEventListener("click", handlePartAction);
 
@@ -111,13 +130,18 @@ function handlePartRequestMessage(event) {
 async function checkUserRole() {
   try {
     const user = await Auth.me();
+    state.currentUser = user;
     if (Auth.hasPermission(user, "part_admin")) {
       elements.importBtn.classList.remove("hidden");
+      elements.deletedItemsLink.classList.remove("hidden");
     } else {
       elements.importBtn.classList.add("hidden");
+      elements.deletedItemsLink.classList.add("hidden");
     }
   } catch (err) {
+    state.currentUser = null;
     elements.importBtn.classList.add("hidden");
+    elements.deletedItemsLink.classList.add("hidden");
   }
 }
 
@@ -236,13 +260,12 @@ function renderParts() {
   elements.partsCount.textContent = `${filtered.length} of ${state.parts.length} records`;
 
   if (filtered.length === 0) {
-    elements.partsBody.innerHTML = '<tr><td colspan="6" class="empty-cell">No parts</td></tr>';
+    elements.partsBody.innerHTML = '<tr><td colspan="5" class="empty-cell">No parts</td></tr>';
     return;
   }
 
   elements.partsBody.innerHTML = filtered.map(part => `
-    <tr>
-      <td>${renderPartRevisionAction(part)}</td>
+    <tr class="clickable-row" data-part-id="${part.id}">
       <td class="mono-cell">${escapeHtml(part.part_number)}</td>
       <td>${escapeHtml(normalizeDisplayText(part.part_name))}</td>
       <td>${escapeHtml(normalizeDisplayText(part.description || "-"))}</td>
@@ -253,34 +276,88 @@ function renderParts() {
 }
 
 async function handlePartAction(event) {
-  const button = event.target.closest("button[data-action='part-revision-request']");
-  if (!button) return;
+  const row = event.target.closest("tr[data-part-id]");
+  if (!row) return;
+  const part = state.parts.find(record => Number(record.id) === Number(row.dataset.partId));
+  if (!part) return;
+  openPartActionModal(part);
+}
+
+function openPartActionModal(part) {
+  state.selectedPart = part;
+  hidePartDeleteConfirm();
+  elements.partActionTitle.textContent = part.part_number || "Part Actions";
+  elements.partActionMeta.textContent = normalizeDisplayText(part.part_name || part.description || "Choose an action for this part.");
+
+  const canRevise = canRequestPartRevision(part);
+  elements.partRevisionRequestBtn.classList.toggle("hidden", !canRevise);
+  elements.partRevisionRequestBtn.disabled = Boolean(part.pending_revision_request_id);
+  elements.partRevisionRequestBtn.textContent = part.pending_revision_request_id ? "Revision Pending" : "Revision Request";
+  elements.partDeleteBtn.classList.toggle("hidden", !Auth.hasPermission(state.currentUser, "part_admin"));
+  elements.partDeleteBtn.disabled = false;
+  elements.confirmPartDeleteBtn.disabled = false;
+
+  elements.partActionModal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closePartActionModal() {
+  elements.partActionModal.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+  state.selectedPart = null;
+  hidePartDeleteConfirm();
+}
+
+async function submitSelectedPartRevisionRequest() {
+  const part = state.selectedPart;
+  if (!part) return;
 
   if (!Auth.getToken()) {
     window.location.href = `/login.html?next=${encodeURIComponent("/parts.html")}`;
     return;
   }
 
-  const confirmed = window.confirm(`Send revision request for ${button.dataset.partNumber}?`);
+  const confirmed = window.confirm(`Send revision request for ${part.part_number}?`);
   if (!confirmed) return;
 
-  button.disabled = true;
+  elements.partRevisionRequestBtn.disabled = true;
   try {
-    const result = await apiPost(`/api/parts/${button.dataset.id}/revision-request`, {});
+    const result = await apiPost(`/api/parts/${part.id}/revision-request`, {});
     showMessage(`Revision request sent to Part List Admins: ${result.revision_request.current_revision_code} -> ${result.revision_request.requested_revision_code}`, "success");
+    closePartActionModal();
     await loadData();
   } catch (error) {
     showMessage(error.message, "error");
-    button.disabled = false;
+    elements.partRevisionRequestBtn.disabled = false;
   }
 }
 
-function renderPartRevisionAction(part) {
-  if (!canRequestPartRevision(part)) return "-";
-  if (part.pending_revision_request_id) {
-    return '<button class="compact-btn secondary-btn" type="button" disabled>Pending</button>';
+function showPartDeleteConfirm() {
+  elements.partDeleteConfirm.classList.remove("hidden");
+}
+
+function hidePartDeleteConfirm() {
+  elements.partDeleteConfirm.classList.add("hidden");
+}
+
+async function deleteSelectedPart() {
+  const part = state.selectedPart;
+  if (!part) return;
+
+  if (!Auth.hasPermission(state.currentUser, "part_admin")) return;
+
+  elements.partDeleteBtn.disabled = true;
+  elements.confirmPartDeleteBtn.disabled = true;
+  try {
+    await apiPost(`/api/admin/parts/${part.id}/delete`, { confirm: true });
+    showMessage(`${part.part_number} deleted and backed up.`, "success");
+    closePartActionModal();
+    await loadData();
+  } catch (error) {
+    showMessage(error.message, "error");
+    elements.partDeleteBtn.disabled = false;
+    elements.confirmPartDeleteBtn.disabled = false;
   }
-  return `<button class="compact-btn secondary-btn" type="button" data-action="part-revision-request" data-id="${part.id}" data-part-number="${escapeHtml(part.part_number)}">Revision Request</button>`;
 }
 
 function canRequestPartRevision(part) {

@@ -3,6 +3,7 @@
     "/",
     "/index.html",
     "/admin.html",
+    "/deleted-items.html",
     "/users.html",
     "/part-request.html"
   ]);

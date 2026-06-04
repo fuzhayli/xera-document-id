@@ -1,5 +1,7 @@
 const state = {
-  documents: []
+  documents: [],
+  currentUser: null,
+  selectedDocument: null
 };
 
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
@@ -25,10 +27,21 @@ const elements = {
   openRequestModalPanelBtn: document.getElementById("openRequestModalPanelBtn"),
   adminControlLink: document.getElementById("adminControlLink"),
   userManagementLink: document.getElementById("userManagementLink"),
+  deletedItemsLink: document.getElementById("deletedItemsLink"),
   requestModal: document.getElementById("requestModal"),
   requestModalBackdrop: document.getElementById("requestModalBackdrop"),
   closeRequestModalBtn: document.getElementById("closeRequestModalBtn"),
   requestFrame: document.getElementById("requestFrame"),
+  documentActionModal: document.getElementById("documentActionModal"),
+  documentActionBackdrop: document.getElementById("documentActionBackdrop"),
+  closeDocumentActionBtn: document.getElementById("closeDocumentActionBtn"),
+  documentActionTitle: document.getElementById("documentActionTitle"),
+  documentActionMeta: document.getElementById("documentActionMeta"),
+  documentRevisionRequestBtn: document.getElementById("documentRevisionRequestBtn"),
+  documentDeleteBtn: document.getElementById("documentDeleteBtn"),
+  documentDeleteConfirm: document.getElementById("documentDeleteConfirm"),
+  cancelDocumentDeleteBtn: document.getElementById("cancelDocumentDeleteBtn"),
+  confirmDocumentDeleteBtn: document.getElementById("confirmDocumentDeleteBtn"),
   filterForm: document.getElementById("filterForm"),
   searchInput: document.getElementById("searchInput"),
   categoryFilter: document.getElementById("categoryFilter"),
@@ -47,6 +60,12 @@ async function init() {
   elements.openRequestModalPanelBtn.addEventListener("click", openRequestModal);
   elements.closeRequestModalBtn.addEventListener("click", closeRequestModal);
   elements.requestModalBackdrop.addEventListener("click", closeRequestModal);
+  elements.closeDocumentActionBtn.addEventListener("click", closeDocumentActionModal);
+  elements.documentActionBackdrop.addEventListener("click", closeDocumentActionModal);
+  elements.documentRevisionRequestBtn.addEventListener("click", submitSelectedRevisionRequest);
+  elements.documentDeleteBtn.addEventListener("click", showDocumentDeleteConfirm);
+  elements.cancelDocumentDeleteBtn.addEventListener("click", hideDocumentDeleteConfirm);
+  elements.confirmDocumentDeleteBtn.addEventListener("click", deleteSelectedDocument);
   window.addEventListener("message", event => {
     if (event.data && event.data.type === "xera-request-created") {
       elements.documentState.textContent = "Request created and published. Refreshing list.";
@@ -65,8 +84,10 @@ async function init() {
 
 async function applySessionLinks() {
   const user = await Auth.me();
+  state.currentUser = user;
   elements.adminControlLink.classList.toggle("hidden", !Auth.hasPermission(user, "document_admin"));
   elements.userManagementLink.classList.toggle("hidden", !Auth.hasPermission(user, "user_admin"));
+  elements.deletedItemsLink.classList.toggle("hidden", !Auth.hasPermission(user, "document_admin"));
 }
 
 function openRequestModal() {
@@ -125,13 +146,12 @@ function renderDocuments() {
   elements.documentCount.textContent = `${filtered.length} of ${state.documents.length} records`;
 
   if (filtered.length === 0) {
-    elements.documentsBody.innerHTML = '<tr><td colspan="13" class="empty-cell">No official documents</td></tr>';
+    elements.documentsBody.innerHTML = '<tr><td colspan="12" class="empty-cell">No official documents</td></tr>';
     return;
   }
 
   elements.documentsBody.innerHTML = filtered.map(documentRecord => `
-    <tr>
-      <td>${renderRevisionRequestAction(documentRecord)}</td>
+    <tr class="clickable-row" data-document-id="${documentRecord.id}">
       <td class="mono-cell">${escapeHtml(documentRecord.document_no)}</td>
       <td>${escapeHtml(formatCategory(documentRecord.category))}</td>
       <td>${escapeHtml(documentRecord.year_yy)}</td>
@@ -149,34 +169,88 @@ function renderDocuments() {
 }
 
 async function handleDocumentAction(event) {
-  const button = event.target.closest("button[data-action='revision-request']");
-  if (!button) return;
+  const row = event.target.closest("tr[data-document-id]");
+  if (!row) return;
+  const documentRecord = state.documents.find(record => Number(record.id) === Number(row.dataset.documentId));
+  if (!documentRecord) return;
+  openDocumentActionModal(documentRecord);
+}
+
+function openDocumentActionModal(documentRecord) {
+  state.selectedDocument = documentRecord;
+  hideDocumentDeleteConfirm();
+  elements.documentActionTitle.textContent = documentRecord.document_no || "Document Actions";
+  elements.documentActionMeta.textContent = documentRecord.document_name || "Choose an action for this document.";
+
+  const canRevise = canRequestRevision(documentRecord);
+  elements.documentRevisionRequestBtn.classList.toggle("hidden", !canRevise);
+  elements.documentRevisionRequestBtn.disabled = Boolean(documentRecord.pending_revision_request_id);
+  elements.documentRevisionRequestBtn.textContent = documentRecord.pending_revision_request_id ? "Revision Pending" : "Revision Request";
+  elements.documentDeleteBtn.classList.toggle("hidden", !Auth.hasPermission(state.currentUser, "document_admin"));
+  elements.documentDeleteBtn.disabled = false;
+  elements.confirmDocumentDeleteBtn.disabled = false;
+
+  elements.documentActionModal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeDocumentActionModal() {
+  elements.documentActionModal.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+  state.selectedDocument = null;
+  hideDocumentDeleteConfirm();
+}
+
+async function submitSelectedRevisionRequest() {
+  const documentRecord = state.selectedDocument;
+  if (!documentRecord) return;
 
   if (!Auth.getToken()) {
     window.location.href = `/login.html?next=${encodeURIComponent("/documents.html")}`;
     return;
   }
 
-  const confirmed = window.confirm(`Send revision update request for ${button.dataset.documentNo}?`);
+  const confirmed = window.confirm(`Send revision update request for ${documentRecord.document_no}?`);
   if (!confirmed) return;
 
-  button.disabled = true;
+  elements.documentRevisionRequestBtn.disabled = true;
   try {
-    const result = await apiPost(`/api/documents/${button.dataset.id}/revision-request`, {});
+    const result = await apiPost(`/api/documents/${documentRecord.id}/revision-request`, {});
     elements.documentState.textContent = `Revision request sent to Document List Admins: ${result.revision_request.current_revision} -> ${result.revision_request.requested_revision}`;
+    closeDocumentActionModal();
     await loadDocuments();
   } catch (error) {
     elements.documentState.textContent = error.message;
-    button.disabled = false;
+    elements.documentRevisionRequestBtn.disabled = false;
   }
 }
 
-function renderRevisionRequestAction(documentRecord) {
-  if (!canRequestRevision(documentRecord)) return "-";
-  if (documentRecord.pending_revision_request_id) {
-    return '<button class="compact-btn secondary-btn" type="button" disabled>Pending</button>';
+function showDocumentDeleteConfirm() {
+  elements.documentDeleteConfirm.classList.remove("hidden");
+}
+
+function hideDocumentDeleteConfirm() {
+  elements.documentDeleteConfirm.classList.add("hidden");
+}
+
+async function deleteSelectedDocument() {
+  const documentRecord = state.selectedDocument;
+  if (!documentRecord) return;
+
+  if (!Auth.hasPermission(state.currentUser, "document_admin")) return;
+
+  elements.documentDeleteBtn.disabled = true;
+  elements.confirmDocumentDeleteBtn.disabled = true;
+  try {
+    await apiPost(`/api/admin/documents/${documentRecord.id}/delete`, { confirm: true });
+    elements.documentState.textContent = `${documentRecord.document_no} deleted and backed up.`;
+    closeDocumentActionModal();
+    await loadDocuments();
+  } catch (error) {
+    elements.documentState.textContent = error.message;
+    elements.documentDeleteBtn.disabled = false;
+    elements.confirmDocumentDeleteBtn.disabled = false;
   }
-  return `<button class="compact-btn secondary-btn" type="button" data-action="revision-request" data-id="${documentRecord.id}" data-document-no="${escapeHtml(documentRecord.document_no)}">Revision Request</button>`;
 }
 
 function canRequestRevision(documentRecord) {
