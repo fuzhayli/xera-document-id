@@ -16,8 +16,7 @@ const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 const PORT = Number(process.env.PORT || 32780);
 const NODE_ENV = process.env.NODE_ENV || "development";
-const IS_PRODUCTION = NODE_ENV === "production";
-const ALLOW_PUBLIC_SIGNUP = parseBooleanEnv(process.env.ALLOW_PUBLIC_SIGNUP, !IS_PRODUCTION);
+const ALLOW_PUBLIC_SIGNUP = !parseBooleanEnv(process.env.DISABLE_PUBLIC_SIGNUP, false);
 
 // Document format rules are intentionally centralized here; every preview,
 // approval, filename export and revision update path reads from this object.

@@ -14,7 +14,7 @@ Node.js document ID, part list and revision workflow app for XERA.
 ```text
 NODE_VERSION=24
 NODE_ENV=production
-ALLOW_PUBLIC_SIGNUP=true
+DISABLE_PUBLIC_SIGNUP=false
 TURSO_DATABASE_URL=...
 TURSO_AUTH_TOKEN=...
 ```

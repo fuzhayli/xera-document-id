@@ -82,7 +82,7 @@ npm start
 ```text
 NODE_VERSION=24
 NODE_ENV=production
-ALLOW_PUBLIC_SIGNUP=true
+DISABLE_PUBLIC_SIGNUP=false
 INITIAL_ADMIN_PASSWORD=...
 TURSO_DATABASE_URL=...
 TURSO_AUTH_TOKEN=...
@@ -90,9 +90,10 @@ TURSO_AUTH_TOKEN=...
 
 Render kendi `PORT` degerini verir; elle port tanimlamak gerekmez.
 
-`ALLOW_PUBLIC_SIGNUP=true` login ekranindaki `Create Account` akisinin calismasi
-icin gereklidir. Public kaydi tekrar kapatmak istersen bu degeri `false` yapip
-kullanici hesaplarini `User Management` ekranindan admin ile olusturabilirsin.
+`Create Account` akisi varsayilan olarak aciktir. Public kaydi kapatmak
+istersen `DISABLE_PUBLIC_SIGNUP=true` yapip kullanici hesaplarini `User
+Management` ekranindan admin ile olusturabilirsin. Eski `ALLOW_PUBLIC_SIGNUP`
+degiskeni artik kayit akisinin acilip kapanmasinda kullanilmaz.
 `INITIAL_ADMIN_PASSWORD` sadece bos production veritabaninda ilk admin hesabi
 olusturmak icin kullanilir; mevcut admin sifrelerini ezmez.
 
