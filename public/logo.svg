@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" role="img" aria-labelledby="title desc">
-  <title id="title">XERA</title>
-  <desc id="desc">XERA wordmark</desc>
-  <rect width="240" height="80" rx="12" fill="#0f172a"/>
-  <path d="M26 18h18l20 24 20-24h18L73 41l31 39H86L64 52 42 80H24l31-39L26 18Z" fill="#38bdf8"/>
-  <text x="112" y="52" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#f8fafc" letter-spacing="2">XERA</text>
-</svg>

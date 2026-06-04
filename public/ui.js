@@ -88,7 +88,7 @@
     sidebar.className = "app-sidebar";
     sidebar.innerHTML = `
       <a class="sidebar-logo" href="/" aria-label="XERA Dashboard">
-        <img src="/logo.svg" alt="XERA">
+        <img src="/logo.png" alt="XERA">
       </a>
       <nav class="sidebar-nav" aria-label="Primary navigation">
         ${NAV_GROUPS.map(group => `

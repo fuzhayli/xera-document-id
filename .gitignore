@@ -17,4 +17,5 @@ Assets/
 *.pptx
 *.xlsx
 *.png
+!public/logo.png
 Xera_Document_ID_Name_Generator.html
