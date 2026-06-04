@@ -49,7 +49,11 @@
 
   async function requireAuth() {
     const user = await me();
-    if (user) return user;
+    if (user) {
+      document.documentElement.classList.remove("auth-pending");
+      return user;
+    }
+    clearSession();
     const next = `${window.location.pathname}${window.location.search}`;
     window.location.href = `/login.html?next=${encodeURIComponent(next)}`;
     return null;
