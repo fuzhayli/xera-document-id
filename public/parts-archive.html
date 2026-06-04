@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Parts Archive</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>Parts Archive</h1>
+        <p>Previous part revisions and part code history</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span>Archive</span>
+      <a class="top-link" href="/parts.html">Parts List</a>
+      <a class="top-link" href="/">User Panel</a>
+    </div>
+  </header>
+
+  <main class="parts-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Filters</h2>
+          <p id="archiveState">Use the filters below to find archived part revisions.</p>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <form class="filter-form parts-archive-filter-form" id="filterForm">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" autocomplete="off" placeholder="Part number, name, description">
+        </label>
+
+        <label class="field">
+          <span>Project</span>
+          <select id="projectFilter"><option value="">All</option></select>
+        </label>
+
+        <label class="field">
+          <span>Main Category</span>
+          <select id="mainFilter"><option value="">All</option></select>
+        </label>
+
+        <button class="secondary-btn" id="clearFiltersBtn" type="button">Clear</button>
+      </form>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Archived Part Revisions</h2>
+          <p id="archiveCount">0 records</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="parts-table">
+          <thead>
+            <tr>
+              <th>Archived Part Number</th>
+              <th>Current Part Number</th>
+              <th>Part Name</th>
+              <th>Description</th>
+              <th>Main Category</th>
+              <th>Sub Category</th>
+            </tr>
+          </thead>
+          <tbody id="archiveBody">
+            <tr><td colspan="6" class="empty-cell">No archived part revisions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/parts-archive.js"></script>
+</body>
+</html>

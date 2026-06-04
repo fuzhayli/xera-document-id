@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>Dashboard</h1>
+        <p>Document and part code requests, review notifications and lists</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span id="currentUserName">User</span>
+      <div class="topbar-divider" aria-hidden="true"></div>
+      <button class="top-icon-btn notification-btn" type="button" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+          <path d="M10 21h4"></path>
+        </svg>
+        <span class="notification-badge hidden" id="notificationBadge">0</span>
+      </button>
+      <a class="top-link" href="/documents.html">Document List</a>
+      <a class="top-link hidden" id="adminLink" href="/admin.html">Admin Review</a>
+      <a class="top-link hidden" id="userManagementLink" href="/users.html">User Management</a>
+      <button class="top-icon-btn" id="logoutBtn" type="button" aria-label="Logout">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <path d="m16 17 5-5-5-5"></path>
+          <path d="M21 12H9"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="view-switcher dashboard-switcher" id="viewSwitcher" aria-label="Workspace views">
+    <button class="view-btn view-card" id="overviewViewBtn" type="button">
+      <span class="view-card-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="4" width="6" height="6"></rect>
+          <rect x="14" y="4" width="6" height="6"></rect>
+          <rect x="4" y="14" width="6" height="6"></rect>
+          <rect x="14" y="14" width="6" height="6"></rect>
+        </svg>
+      </span>
+      <span class="view-card-copy">
+        <strong>Overview</strong>
+      </span>
+    </button>
+    <button class="view-btn view-card" id="myRequestsViewBtn" type="button">
+      <span class="view-card-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 6h12"></path>
+          <path d="M8 12h12"></path>
+          <path d="M8 18h12"></path>
+          <path d="M4 6h.01"></path>
+          <path d="M4 12h.01"></path>
+          <path d="M4 18h.01"></path>
+        </svg>
+      </span>
+      <span class="view-card-copy">
+        <strong>Requests</strong>
+        <small>My Requests</small>
+      </span>
+      <svg class="view-card-chevron" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+    </button>
+    <a class="view-btn view-card link-btn" href="/documents.html">
+      <span class="view-card-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 3h8l4 4v14H7z"></path>
+          <path d="M15 3v5h5"></path>
+          <path d="M10 12h6"></path>
+          <path d="M10 16h6"></path>
+        </svg>
+      </span>
+      <span class="view-card-copy">
+        <strong>Documents</strong>
+        <small>Document List</small>
+      </span>
+      <svg class="view-card-chevron" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+    </a>
+    <a class="view-btn view-card link-btn" href="/parts.html">
+      <span class="view-card-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m21 8-9-5-9 5 9 5 9-5Z"></path>
+          <path d="M3 8v8l9 5 9-5V8"></path>
+          <path d="M12 13v8"></path>
+        </svg>
+      </span>
+      <span class="view-card-copy">
+        <strong>Parts</strong>
+        <small>Parts List</small>
+      </span>
+      <svg class="view-card-chevron" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+    </a>
+    <a class="view-btn view-card link-btn hidden" id="adminControlViewLink" href="/admin.html">
+      <span class="view-card-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"></path>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 0 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7A2 2 0 0 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1a2 2 0 0 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"></path>
+        </svg>
+      </span>
+      <span class="view-card-copy">
+        <strong>Admin</strong>
+        <small>Admin Review</small>
+      </span>
+      <svg class="view-card-chevron" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+    </a>
+    <a class="view-card-sentinel hidden" id="userManagementViewLink" href="/users.html">User Management</a>
+  </nav>
+
+  <main class="shell">
+    <section class="overview-panel dashboard-overview" id="overviewPanel">
+      <div class="dashboard-state-row">
+        <p id="dashboardState">Loading</p>
+        <button class="secondary-btn compact-btn" id="refreshOverviewBtn" type="button">Refresh</button>
+      </div>
+
+      <section class="dashboard-overview-section">
+        <div class="dashboard-section-head">
+          <h2>Documents Overview</h2>
+          <a class="secondary-btn compact-btn" href="/documents.html">
+            View Documents
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14"></path>
+              <path d="m13 6 6 6-6 6"></path>
+            </svg>
+          </a>
+        </div>
+        <div class="kpi-row user-overview-row">
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 3h8l4 4v14H7z"></path>
+              <path d="M15 3v5h5"></path>
+              <path d="M12 12v6"></path>
+              <path d="M9 15h6"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Notifications</span>
+          <strong id="overviewPendingCount">0</strong>
+          <span class="kpi-meter"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z"></path>
+              <path d="m9 14 2 2 4-5"></path>
+              <path d="M8 4 12 2l4 2"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Created</span>
+          <strong id="overviewApprovedCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="6" y="3" width="12" height="18" rx="1.5"></rect>
+              <path d="M9 6h6"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Reviewed</span>
+          <strong id="overviewPublishedCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m12 3 8 4-8 4-8-4 8-4Z"></path>
+              <path d="m4 12 8 4 8-4"></path>
+              <path d="m4 17 8 4 8-4"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Sequences</span>
+          <strong id="overviewSequenceCount">0</strong>
+          <span class="kpi-meter"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+              <path d="M10 21h4"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Activity</span>
+          <strong id="overviewAuditCount">0</strong>
+          <span class="kpi-meter"></span>
+        </button>
+        </div>
+      </section>
+
+      <section class="dashboard-overview-section">
+        <div class="dashboard-section-head">
+          <h2>Parts Overview</h2>
+          <a class="secondary-btn compact-btn" href="/parts.html">
+            View Parts
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14"></path>
+              <path d="m13 6 6 6-6 6"></path>
+            </svg>
+          </a>
+        </div>
+        <div class="kpi-row user-overview-row">
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-part-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m21 8-9-5-9 5 9 5 9-5Z"></path>
+              <path d="M3 8v8l9 5 9-5V8"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Notifications</span>
+          <strong id="partOverviewPendingCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-part-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z"></path>
+              <path d="m9 14 2 2 4-5"></path>
+              <path d="M8 4 12 2l4 2"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Created</span>
+          <strong id="partOverviewApprovedCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-part-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Reviewed</span>
+          <strong id="partOverviewPublishedCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-part-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m12 3 8 4-8 4-8-4 8-4Z"></path>
+              <path d="m4 12 8 4 8-4"></path>
+              <path d="m4 17 8 4 8-4"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Sequences</span>
+          <strong id="partOverviewSequenceCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        <button class="kpi kpi-button dashboard-kpi" type="button" data-part-request-filter="all">
+          <span class="kpi-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+              <path d="M10 21h4"></path>
+            </svg>
+          </span>
+          <span class="kpi-label">Activity</span>
+          <strong id="partOverviewAuditCount">0</strong>
+          <span class="kpi-meter muted"></span>
+        </button>
+        </div>
+      </section>
+
+      <div class="dashboard-lower-grid">
+        <section class="dashboard-card-panel quick-actions-panel">
+          <h2>Quick Actions</h2>
+          <div class="quick-action-list">
+            <button class="quick-action" id="newRequestViewBtn" type="button">
+              <span class="quick-action-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 3h8l4 4v14H7z"></path>
+                  <path d="M15 3v5h5"></path>
+                  <path d="M12 12v6"></path>
+                  <path d="M9 15h6"></path>
+            </svg>
+          </span>
+          <span>
+                <strong>New Document</strong>
+                <small>Document ID request</small>
+          </span>
+              <svg class="quick-action-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6"></path>
+              </svg>
+            </button>
+            <a class="quick-action" href="/part-request.html">
+              <span class="quick-action-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m21 8-9-5-9 5 9 5 9-5Z"></path>
+                  <path d="M3 8v8l9 5 9-5V8"></path>
+                  <path d="M19 17v4"></path>
+                  <path d="M17 19h4"></path>
+                </svg>
+            </span>
+              <span>
+                <strong>New Part</strong>
+                <small>Part code request</small>
+              </span>
+              <svg class="quick-action-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6"></path>
+              </svg>
+            </a>
+            <a class="quick-action" href="/documents.html">
+              <span class="quick-action-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 3h8l4 4v14H7z"></path>
+                  <path d="M15 3v5h5"></path>
+                  <path d="M10 12h6"></path>
+                  <path d="M10 16h6"></path>
+                </svg>
+            </span>
+              <span>
+                <strong>Documents</strong>
+                <small>Browse official documents</small>
+              </span>
+              <svg class="quick-action-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6"></path>
+              </svg>
+            </a>
+          </div>
+        </section>
+
+        <section class="dashboard-card-panel recent-panel">
+          <div class="dashboard-section-head">
+            <h2>Recent Activity</h2>
+            <button class="text-action" id="viewAllActivityBtn" type="button">
+              View All Activity
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h14"></path>
+                <path d="m13 6 6 6-6 6"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="recent-table-wrap">
+            <table class="recent-activity-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>User</th>
+                  <th>Date &amp; Time</th>
+                </tr>
+              </thead>
+              <tbody id="recentActivityBody">
+                <tr><td colspan="5" class="empty-cell">No recent activity</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div id="overviewMessageBox" class="message-box hidden"></div>
+    </section>
+
+    <section class="panel form-panel hidden waiting-category" id="requestPanel">
+      <div class="panel-head">
+        <div>
+          <h2>New Request</h2>
+          <p id="categorySummary">Document Type</p>
+        </div>
+        <button class="secondary-btn" id="refreshRequestsBtn" type="button">Refresh</button>
+      </div>
+
+      <div class="request-type-switcher" aria-label="Request type">
+        <button class="request-type-tab active" type="button">Document</button>
+        <a class="request-type-tab" href="/part-request.html">Part</a>
+      </div>
+
+      <div class="category-tabs" id="categoryTabs" aria-label="Document category"></div>
+
+      <form id="requestForm" class="request-form hidden">
+        <div class="grid two">
+          <label class="field">
+            <span>Reference Type</span>
+            <select id="referenceType" name="reference_type">
+              <option value="model">Model</option>
+              <option value="part">Part Code</option>
+              <option value="department">Department</option>
+              <option value="task">Task</option>
+              <option value="brand">Brand</option>
+              <option value="process">Process No.</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span id="referenceLabel">Reference</span>
+            <input id="referenceValue" name="reference_value" autocomplete="off" placeholder="GR10X-40K" list="referenceOptions">
+            <datalist id="referenceOptions"></datalist>
+          </label>
+        </div>
+
+        <div class="grid three hidden" id="extraFields">
+          <label class="field hidden" id="extraTypeField">
+            <span id="extraTypeLabel">Type</span>
+            <select id="extraType" name="detail_type"></select>
+          </label>
+
+          <label class="field hidden" id="extraCodeField">
+            <span id="extraCodeLabel">Code</span>
+            <input id="extraCode" name="detail_code" autocomplete="off" placeholder="A">
+            <datalist id="ecOrderOptions">
+              <option value="A"></option>
+              <option value="B"></option>
+              <option value="C"></option>
+              <option value="D"></option>
+              <option value="E"></option>
+              <option value="F"></option>
+              <option value="G"></option>
+              <option value="H"></option>
+              <option value="I"></option>
+              <option value="J"></option>
+              <option value="K"></option>
+              <option value="L"></option>
+              <option value="M"></option>
+              <option value="N"></option>
+              <option value="O"></option>
+              <option value="P"></option>
+              <option value="Q"></option>
+              <option value="R"></option>
+              <option value="S"></option>
+              <option value="T"></option>
+              <option value="U"></option>
+              <option value="V"></option>
+              <option value="W"></option>
+              <option value="X"></option>
+              <option value="Y"></option>
+              <option value="Z"></option>
+            </datalist>
+          </label>
+
+          <label class="field hidden" id="extraVersionField">
+            <span id="extraVersionLabel">Version</span>
+            <input id="extraVersion" name="detail_version" autocomplete="off" placeholder="1">
+          </label>
+
+          <label class="field hidden" id="languageField">
+            <span>Language</span>
+            <input id="language" name="language" autocomplete="off" maxlength="2" placeholder="EN" value="EN" list="languageOptions">
+            <datalist id="languageOptions">
+              <option value="EN"></option>
+              <option value="TR"></option>
+              <option value="KR"></option>
+            </datalist>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Document Name</span>
+          <input id="documentName" name="document_name" autocomplete="off" placeholder="Risk Management Report">
+        </label>
+
+        <div class="grid three">
+          <label class="field">
+            <span>Written By</span>
+            <input id="writtenBy" name="written_by" autocomplete="name" readonly placeholder="Full name from user registration">
+          </label>
+
+          <label class="field">
+            <span>Creation Date</span>
+            <input id="creationDate" name="creation_date" type="date">
+          </label>
+
+          <label class="field" id="revisionField">
+            <span>Revision</span>
+            <input id="revision" name="revision" placeholder="r00" value="r00">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Document No</span>
+          <input id="documentNo" name="document_no" autocomplete="off" placeholder="System will suggest an available number">
+        </label>
+
+        <div class="form-actions">
+          <button class="secondary-btn" id="clearBtn" type="button">Clear</button>
+          <button class="primary-btn" id="submitBtn" type="submit">Submit Request</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel preview-panel hidden" id="previewPanel">
+      <div class="panel-head">
+        <div>
+          <h2>Preview</h2>
+          <p id="previewState">Waiting for input</p>
+        </div>
+      </div>
+
+      <dl class="preview-list">
+        <div>
+          <dt>Document No</dt>
+          <dd id="documentNoPreview">-</dd>
+        </div>
+        <div>
+          <dt>Filename</dt>
+          <dd id="filenamePreview">-</dd>
+        </div>
+      </dl>
+
+      <div id="messageBox" class="message-box hidden"></div>
+    </aside>
+
+    <div class="request-success-modal hidden" id="requestSuccessModal" role="dialog" aria-modal="true" aria-labelledby="requestSuccessTitle">
+      <div class="request-success-backdrop" id="requestSuccessBackdrop"></div>
+      <section class="request-success-panel">
+        <div class="request-success-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M20 6 9 17l-5-5"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 id="requestSuccessTitle">Request Submitted</h2>
+          <p>Your request was auto-published and sent to admin notifications.</p>
+        </div>
+        <div class="submitted-request-name" id="submittedRequestName">-</div>
+        <div class="success-actions">
+          <button class="primary-btn" id="newRequestAfterSubmitBtn" type="button">New Request</button>
+          <button class="secondary-btn" id="closeAfterSubmitBtn" type="button">Close</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel table-panel hidden" id="myRequestsPanel">
+      <div class="panel-head">
+        <div>
+          <h2>My Requests</h2>
+          <p id="requestCount">0 records</p>
+        </div>
+        <div class="refresh-row">
+          <button class="secondary-btn hidden" id="clearRequestFilterBtn" type="button">All Requests</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Category</th>
+              <th>Preview / Doc No</th>
+              <th>Document Name</th>
+              <th>Reference</th>
+              <th>Creation Date</th>
+              <th>Checked By</th>
+            </tr>
+          </thead>
+          <tbody id="requestsBody">
+            <tr>
+              <td colspan="7" class="empty-cell">No records</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

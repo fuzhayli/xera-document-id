@@ -1,0 +1,18 @@
+{
+  "name": "xera-document-id-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XERA Document ID Request and Approval System MVP backend.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "node --watch --no-warnings server/index.js",
+    "migrate:turso": "node --no-warnings scripts/migrate-sqlite-to-turso.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.3"
+  }
+}

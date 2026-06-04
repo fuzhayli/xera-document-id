@@ -1,0 +1,11 @@
+services:
+  xera-document-id:
+    build: .
+    container_name: xera-document-id
+    restart: unless-stopped
+    environment:
+      PORT: "32780"
+      TURSO_DATABASE_URL: "${TURSO_DATABASE_URL}"
+      TURSO_AUTH_TOKEN: "${TURSO_AUTH_TOKEN}"
+    ports:
+      - "32780:32780"

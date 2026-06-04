@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Admin Review</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>Admin Review</h1>
+        <p>Review notifications, revision requests and audit log</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span id="currentAdminName">Admin</span>
+      <a class="top-link" href="/documents.html">Document List</a>
+      <a class="top-link hidden" id="userManagementLink" href="/users.html">User Management</a>
+      <a class="top-link" href="/">User Panel</a>
+    </div>
+  </header>
+
+  <main class="admin-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Overview</h2>
+          <p id="adminState">Loading</p>
+        </div>
+        <div class="refresh-row">
+          <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi">
+          <span>Open Tasks</span>
+          <strong id="pendingCount">0</strong>
+        </div>
+        <div class="kpi">
+          <span>Official Docs</span>
+          <strong id="approvedCount">0</strong>
+        </div>
+        <div class="kpi">
+          <span>Sequences</span>
+          <strong id="sequenceCount">0</strong>
+        </div>
+        <div class="kpi">
+          <span>Activity</span>
+          <strong id="auditCount">0</strong>
+        </div>
+      </div>
+
+      <div id="messageBox" class="message-box hidden"></div>
+    </section>
+
+    <section class="panel table-panel" id="notificationSection">
+      <div class="panel-head">
+        <div>
+          <h2>New Record Reviews</h2>
+          <p id="notificationCount">0 notifications</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Actions</th>
+              <th>Type</th>
+              <th>Item</th>
+              <th>Details</th>
+              <th>Requested By</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="notificationBody">
+            <tr><td colspan="6" class="empty-cell">No review notifications</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="admin-grid">
+      <section class="panel table-panel" id="sequenceSection">
+        <div class="panel-head">
+          <div>
+            <h2>Sequences</h2>
+            <p>Next official number by category and year.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Scope</th>
+                <th>Next</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="sequenceBody">
+              <tr><td colspan="3" class="empty-cell">No sequences yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel table-panel" id="partRevisionPendingSection">
+      <div class="panel-head">
+        <div>
+          <h2>Pending Part Revision Requests</h2>
+          <p id="partRevisionPendingCount">0 requests</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Actions</th>
+              <th>Part Number</th>
+              <th>Current</th>
+              <th>Requested</th>
+              <th>Part Name</th>
+              <th>Requested By</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="partRevisionPendingBody">
+            <tr><td colspan="7" class="empty-cell">No pending part revision requests</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel table-panel" id="revisionPendingSection">
+      <div class="panel-head">
+        <div>
+          <h2>Pending Revision Requests</h2>
+          <p id="revisionPendingCount">0 requests</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Actions</th>
+              <th>Document No</th>
+              <th>Current</th>
+              <th>Requested</th>
+              <th>Filename</th>
+              <th>Document Name</th>
+              <th>Requested By</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="revisionPendingBody">
+            <tr><td colspan="8" class="empty-cell">No pending revision requests</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="admin-grid">
+      <section class="panel table-panel" id="approvedDocumentsSection">
+        <div class="panel-head">
+        <div>
+          <h2>Official Documents</h2>
+          <p>Official records created automatically and reviewed by admins.</p>
+        </div>
+        <a class="secondary-btn export-link" href="/api/documents/export.xlsx">Export Excel</a>
+      </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Actions</th>
+                <th>Document No</th>
+                <th>Filename</th>
+                <th>Category</th>
+                <th>Document Name</th>
+                <th>Checked By</th>
+                <th>Reviewed At</th>
+              </tr>
+            </thead>
+            <tbody id="documentsBody">
+              <tr><td colspan="7" class="empty-cell">No official documents</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel table-panel" id="auditSection">
+        <div class="panel-head">
+          <div>
+            <h2>Audit Log</h2>
+            <p>Recent create, review and revision events.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Entity</th>
+              </tr>
+            </thead>
+            <tbody id="auditBody">
+              <tr><td colspan="4" class="empty-cell">No audit events</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="request-success-modal hidden" id="notificationEditModal" role="dialog" aria-modal="true" aria-labelledby="notificationEditTitle">
+    <div class="request-success-backdrop" id="notificationEditBackdrop"></div>
+    <section class="request-success-panel notification-edit-panel">
+      <div>
+        <h2 id="notificationEditTitle">Edit Review Item</h2>
+        <p id="notificationEditItem">-</p>
+      </div>
+
+      <div class="message-box hidden" id="notificationEditMessage"></div>
+
+      <form class="notification-edit-form" id="notificationEditForm">
+        <div id="notificationEditDocumentFields" class="notification-edit-fields">
+          <label class="field">
+            <span>Document Name</span>
+            <input id="notificationDocumentName" autocomplete="off">
+          </label>
+          <label class="field" id="notificationReferenceField">
+            <span>Reference</span>
+            <input id="notificationReferenceValue" autocomplete="off">
+          </label>
+        </div>
+
+        <div id="notificationEditPartFields" class="notification-edit-fields hidden">
+          <label class="field">
+            <span>Part Name</span>
+            <input id="notificationPartName" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Description</span>
+            <input id="notificationDescription" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Main Category</span>
+            <input id="notificationMainCategory" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>Sub Category</span>
+            <input id="notificationSubCategory" autocomplete="off">
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button class="secondary-btn" id="notificationEditCancelBtn" type="button">Cancel</button>
+          <button class="primary-btn" id="notificationEditSaveBtn" type="submit">Save Review</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

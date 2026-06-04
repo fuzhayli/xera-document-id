@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA New Part Request</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>New Part</h1>
+        <p>SOP compliant part code request and approval workflow</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span id="currentUserName">User</span>
+      <a class="top-link" href="/parts.html">Parts List</a>
+      <a class="top-link" href="/documents.html">Document List</a>
+      <button class="top-link button-link" id="logoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="shell part-request-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>New Request</h2>
+          <p id="requestState">Loading</p>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <div class="request-type-switcher" aria-label="Request type">
+        <a class="request-type-tab" href="/?view=new">Document</a>
+        <button class="request-type-tab active" type="button">Part</button>
+      </div>
+
+      <form id="partRequestForm" class="request-form">
+        <div class="grid two">
+          <label class="field">
+            <span>Project Code</span>
+            <select id="projectCode" name="project_code"></select>
+          </label>
+
+          <label class="field">
+            <span>Main Code</span>
+            <select id="mainCode" name="main_code"></select>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label class="field">
+            <span>Revision Type</span>
+            <select id="revisionMode" name="revision_mode"></select>
+          </label>
+
+          <label class="field">
+            <span>Revision Code</span>
+            <input id="revisionCode" name="revision_code" autocomplete="off" value="01A">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Part Name</span>
+          <input id="partName" name="part_name" autocomplete="off" placeholder="BT_MAIN_FRAME">
+        </label>
+
+        <label class="field">
+          <span>Description</span>
+          <input id="description" name="description" autocomplete="off" placeholder="AL6063-T5, RAL 7035" list="descriptionOptions">
+          <datalist id="descriptionOptions"></datalist>
+        </label>
+
+        <label class="field">
+          <span>Sub Category</span>
+          <input id="subCategory" name="sub_category" autocomplete="off" placeholder="Aluminium Extrusion" list="subCategoryOptions">
+          <datalist id="subCategoryOptions"></datalist>
+        </label>
+
+        <label class="field">
+          <span>Part Number</span>
+          <input id="partNumber" name="part_number" autocomplete="off" placeholder="System suggests an available code, or type X101-2001-01A">
+        </label>
+
+        <div class="form-actions">
+          <button class="secondary-btn" id="clearBtn" type="button">Clear</button>
+          <button class="primary-btn" id="submitBtn" type="submit" disabled>Submit Request</button>
+        </div>
+      </form>
+
+      <div id="messageBox" class="message-box hidden"></div>
+    </section>
+
+    <aside class="panel preview-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Preview</h2>
+          <p id="previewState">Waiting for input</p>
+        </div>
+      </div>
+
+      <dl class="preview-list">
+        <div>
+          <dt>PART NUMBER</dt>
+          <dd id="partNumberPreview">-</dd>
+        </div>
+        <div>
+          <dt>MAIN CATEGORY</dt>
+          <dd id="mainCategoryPreview">-</dd>
+        </div>
+      </dl>
+    </aside>
+
+    <section class="panel table-panel my-part-requests-panel" id="myPartRequestsPanel">
+      <div class="panel-head">
+        <div>
+          <h2>My Part Requests</h2>
+          <p id="requestCount">0 records</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Part Number</th>
+              <th>Part Name</th>
+              <th>Main Category</th>
+              <th>Sub Category</th>
+              <th>Checked By</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="requestsBody">
+            <tr><td colspan="7" class="empty-cell">No records</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="request-success-modal hidden" id="requestSuccessModal" role="dialog" aria-modal="true" aria-labelledby="requestSuccessTitle">
+      <div class="request-success-backdrop" id="requestSuccessBackdrop"></div>
+      <section class="request-success-panel">
+        <div class="request-success-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M20 6 9 17l-5-5"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 id="requestSuccessTitle">Request Submitted</h2>
+          <p>Your request was auto-published and sent to admin notifications.</p>
+        </div>
+        <div class="submitted-request-name" id="submittedRequestName">-</div>
+        <div class="success-actions">
+          <button class="primary-btn" id="newRequestAfterSubmitBtn" type="button">New Request</button>
+          <button class="secondary-btn" id="closeAfterSubmitBtn" type="button">Close</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/part-request.js"></script>
+</body>
+</html>

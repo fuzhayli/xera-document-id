@@ -1,0 +1,14 @@
+data/
+docs/
+Assets/
+node_modules/
+.env
+.env.*
+!.env.example
+*.docx
+*.pptx
+Document Number List_r00.xlsx
+XERA-Start-Server.cmd
+XERA-Uygulamayi-Ac.cmd
+Xera_Document_ID_Name_Generator.html
+logo.png

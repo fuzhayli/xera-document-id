@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Users</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>Users</h1>
+        <p>Create users, assign permissions and reset passwords</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span id="currentAdminName">Admin</span>
+      <a class="top-link hidden" id="adminControlLink" href="/admin.html">Admin Review</a>
+      <a class="top-link" href="/documents.html">Document List</a>
+      <a class="top-link" href="/">User Panel</a>
+      <button class="top-link button-link" id="logoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="admin-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Create Account</h2>
+          <p id="userState">Only @xera.com.tr email addresses are accepted.</p>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <form id="createUserForm" class="request-form">
+        <div class="grid three">
+          <label class="field">
+            <span>Full Name</span>
+            <input id="displayName" autocomplete="name" placeholder="Name Surname" required>
+          </label>
+
+          <label class="field">
+            <span>Position</span>
+            <input id="position" autocomplete="organization-title" placeholder="Validation Engineer" required>
+          </label>
+
+          <fieldset class="permission-field">
+            <legend>Permissions</legend>
+            <label><input type="checkbox" name="permissions" value="part_admin"> Part List Admin</label>
+            <label><input type="checkbox" name="permissions" value="document_admin"> Document List Admin</label>
+            <label><input type="checkbox" name="permissions" value="user_admin"> User Management</label>
+          </fieldset>
+        </div>
+
+        <div class="grid three">
+          <label class="field">
+            <span>Email</span>
+            <input id="email" type="email" autocomplete="email" placeholder="name@xera.com.tr" required>
+          </label>
+
+          <label class="field">
+            <span>Department</span>
+            <input id="department" autocomplete="organization" placeholder="QARA">
+          </label>
+
+          <label class="field">
+            <span>Temporary Password</span>
+            <input id="password" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button class="secondary-btn" id="clearBtn" type="button">Clear</button>
+          <button class="primary-btn" type="submit">Create User</button>
+        </div>
+      </form>
+
+      <div id="messageBox" class="message-box hidden"></div>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Users</h2>
+          <p id="userCount">0 users</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>Actions</th>
+              <th>Full Name</th>
+              <th>Email</th>
+              <th>Position</th>
+              <th>Department</th>
+              <th>Permission</th>
+              <th>Sessions</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody">
+            <tr><td colspan="8" class="empty-cell">No users</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/users.js"></script>
+</body>
+</html>

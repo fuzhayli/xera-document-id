@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Documents</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>Documents</h1>
+        <p>Official document records with searchable file names</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span>Shared View</span>
+      <button class="top-link button-link" id="openRequestModalBtn" type="button">Document ID Request</button>
+      <a class="top-link hidden" id="adminControlLink" href="/admin.html">Admin Review</a>
+      <a class="top-link hidden" id="userManagementLink" href="/users.html">User Management</a>
+      <a class="top-link" href="/">User Panel</a>
+    </div>
+  </header>
+
+  <main class="documents-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Filters</h2>
+          <p id="documentState">Use the filters below to find official records.</p>
+        </div>
+        <div class="refresh-row">
+          <button class="primary-btn" id="openRequestModalPanelBtn" type="button">Document ID Request</button>
+          <a class="secondary-btn export-link" href="/api/documents/export.xlsx">Export Excel</a>
+          <a class="secondary-btn" href="/archive.html">Archive</a>
+          <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <form class="filter-form" id="filterForm">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" autocomplete="off" placeholder="Document no, filename, product, document name">
+        </label>
+
+        <label class="field">
+          <span>Category</span>
+          <select id="categoryFilter">
+            <option value="">All</option>
+            <option value="D">D (General Purpose Document)</option>
+            <option value="R">R (Record Purpose Document)</option>
+            <option value="MD">MD (Manufacturing Dynamic Document)</option>
+            <option value="MR">MR (Manufacturing Record Document)</option>
+            <option value="EC">EC (Engineering Change)</option>
+            <option value="MARKETING">MARKETING (Marketing Material ID)</option>
+            <option value="QMS">QMS (Quality Management)</option>
+            <option value="SOP">SOP (SOP / Instruction)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Year</span>
+          <select id="yearFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+
+        <button class="secondary-btn" id="clearFiltersBtn" type="button">Clear</button>
+      </form>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-head">
+        <div>
+          <h2>All Official Documents</h2>
+          <p id="documentCount">0 records</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Actions</th>
+              <th>Document No</th>
+              <th>Category</th>
+              <th>Year</th>
+              <th>Revision</th>
+              <th>Filename</th>
+              <th>Document Name</th>
+              <th>Reference</th>
+              <th>Written By</th>
+              <th>Creation Date</th>
+              <th>Checked By</th>
+              <th>Reviewed At</th>
+              <th>Revision Updated</th>
+            </tr>
+          </thead>
+          <tbody id="documentsBody">
+            <tr><td colspan="13" class="empty-cell">No official documents</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal hidden" id="requestModal" role="dialog" aria-modal="true" aria-label="Document ID Request">
+    <div class="modal-backdrop" id="requestModalBackdrop"></div>
+    <section class="modal-panel">
+      <header class="modal-head">
+        <div>
+          <h2>Document ID Request</h2>
+          <p>Create and publish a new document ID.</p>
+        </div>
+        <button class="secondary-btn" id="closeRequestModalBtn" type="button">Close</button>
+      </header>
+      <iframe id="requestFrame" title="Document ID Request Form"></iframe>
+    </section>
+  </div>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/documents.js"></script>
+</body>
+</html>

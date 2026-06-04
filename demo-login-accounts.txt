@@ -1,0 +1,13 @@
+XERA Document ID Generator - Login Accounts
+
+The old demo passwords in this project were reset for the live Turso database.
+Do not use or publish the previous seed passwords.
+
+Current live credentials are stored locally in:
+
+xera-live-credentials.local.txt
+
+That file is ignored by git via *.local.txt and must not be committed, shared,
+or uploaded to a public repository.
+
+For production use, create and reset users from the User Management screen.

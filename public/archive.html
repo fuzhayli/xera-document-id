@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Document Archive</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="XERA"></div>
+      <div>
+        <h1>Document Archive</h1>
+        <p>Previous document revisions and revision change history</p>
+      </div>
+    </div>
+    <div class="user-strip">
+      <span id="apiStatus" class="status-dot status-muted"></span>
+      <span>Archive</span>
+      <a class="top-link" href="/documents.html">Document List</a>
+      <a class="top-link" href="/">User Panel</a>
+    </div>
+  </header>
+
+  <main class="documents-shell">
+    <section class="panel form-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Filters</h2>
+          <p id="archiveState">Use the filters below to find archived revisions.</p>
+        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <form class="filter-form" id="filterForm">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" autocomplete="off" placeholder="Document no, filename, document name">
+        </label>
+
+        <label class="field">
+          <span>Category</span>
+          <select id="categoryFilter">
+            <option value="">All</option>
+            <option value="D">D (General Purpose Document)</option>
+            <option value="R">R (Record Purpose Document)</option>
+            <option value="MD">MD (Manufacturing Dynamic Document)</option>
+            <option value="MR">MR (Manufacturing Record Document)</option>
+            <option value="EC">EC (Engineering Change)</option>
+            <option value="MARKETING">MARKETING (Marketing Material ID)</option>
+            <option value="QMS">QMS (Quality Management)</option>
+            <option value="SOP">SOP (SOP / Instruction)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Year</span>
+          <select id="yearFilter">
+            <option value="">All</option>
+          </select>
+        </label>
+
+        <button class="secondary-btn" id="clearFiltersBtn" type="button">Clear</button>
+      </form>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Archived Revisions</h2>
+          <p id="archiveCount">0 records</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="archive-table">
+          <thead>
+            <tr>
+              <th>Document No</th>
+              <th>Category</th>
+              <th>Year</th>
+              <th>Old Revision</th>
+              <th>New Revision</th>
+              <th>Old Filename</th>
+              <th>Document Name</th>
+              <th>Written By</th>
+              <th>Checked By</th>
+              <th>Changed By</th>
+              <th>Changed At</th>
+            </tr>
+          </thead>
+          <tbody id="archiveBody">
+            <tr><td colspan="11" class="empty-cell">No archived revisions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/archive.js"></script>
+</body>
+</html>

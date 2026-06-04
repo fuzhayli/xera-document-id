@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <script>
+    (function() {
+      const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XERA Login</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-layout">
+    <section class="auth-content">
+      <div class="auth-logo"><img src="/logo.svg" alt="XERA"></div>
+      <div class="auth-heading">
+        <h1>Welcome to XERA Control Center</h1>
+        <p>Document ID & Revision Management System</p>
+      </div>
+
+      <form id="loginForm" class="auth-card">
+        <label class="field">
+          <span>Email</span>
+          <input id="email" type="email" autocomplete="email" placeholder="name@xera.com.tr" required>
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
+        </label>
+
+        <div id="messageBox" class="message-box hidden"></div>
+
+        <div class="auth-row">
+          <label class="remember-me">
+            <input type="checkbox" name="remember">
+            <span>Remember me</span>
+          </label>
+          <a class="auth-minor-link" href="/login.html">Forgot password?</a>
+        </div>
+
+        <button class="primary-btn auth-submit" type="submit">Login</button>
+
+        <div class="auth-divider" id="signupDivider" hidden><span>or</span></div>
+
+        <a class="secondary-btn auth-create" id="signupLink" href="/signup.html" hidden>Create Account</a>
+      </form>
+
+      <div class="auth-note">
+        <span class="note-icon" aria-hidden="true"></span>
+        <div>
+          <strong>Use your @xera.com.tr email account</strong>
+          <p>This keeps document access secure and traceable.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="auth-visual" aria-hidden="true">
+      <div class="workflow-card workflow-card-top">
+        <strong>Document Control</strong>
+        <span>Version control</span>
+        <span>Access management</span>
+      </div>
+      <div class="workflow-card workflow-card-mid">
+        <strong>Revision Workflow</strong>
+        <span>Review</span>
+        <span>Approve</span>
+        <span>Publish</span>
+      </div>
+      <div class="workflow-card workflow-card-bottom">
+        <strong>Audit Trail</strong>
+        <span>Track changes</span>
+        <span>Compliance</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+  <script src="/login.js"></script>
+</body>
+</html>
