@@ -12,6 +12,21 @@ const CATEGORY_LABELS = {
   SOP: "SOP (SOP / Instruction)",
   MARKETING: "MARKETING (Marketing Material ID)"
 };
+const DOCUMENT_ARCHIVE_SEARCH_SCOPE_ID = "documentArchiveSearchScope";
+const DOCUMENT_ARCHIVE_SEARCH_FIELDS = {
+  document_no: record => record.document_no,
+  category: record => [record.category, formatCategory(record.category)],
+  year: record => record.year_yy,
+  old_revision: record => record.revision,
+  new_revision: record => record.next_revision,
+  old_filename: record => record.generated_filename,
+  document_name: record => record.document_name,
+  reference: record => record.reference_value,
+  written_by: record => record.written_by,
+  checked_by: record => record.checked_by,
+  changed_by: record => record.revision_changed_by,
+  changed_at: record => [record.revision_changed_at, record.revision_changed_at ? formatDateTime(record.revision_changed_at) : ""]
+};
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -99,24 +114,14 @@ function getFilteredArchive() {
   const search = normalizeSearch(elements.searchInput.value);
   const category = elements.categoryFilter.value;
   const year = elements.yearFilter.value;
+  const searchFields = getActiveSearchFields(DOCUMENT_ARCHIVE_SEARCH_SCOPE_ID, DOCUMENT_ARCHIVE_SEARCH_FIELDS);
 
   return state.archive.filter(record => {
     if (category && record.category !== category) return false;
     if (year && record.year_yy !== year) return false;
     if (!search) return true;
 
-    const haystack = normalizeSearch([
-      record.document_no,
-      record.generated_filename,
-      record.document_name,
-      record.reference_value,
-      record.written_by,
-      record.revision_changed_by,
-      record.revision,
-      record.next_revision,
-      record.category
-    ].join(" "));
-    return haystack.includes(search);
+    return matchesScopedSearch(record, search, searchFields);
   });
 }
 
@@ -124,7 +129,22 @@ function clearFilters() {
   elements.searchInput.value = "";
   elements.categoryFilter.value = "";
   elements.yearFilter.value = "";
+  window.XeraSearchScopes?.clear(DOCUMENT_ARCHIVE_SEARCH_SCOPE_ID);
   renderArchive();
+}
+
+function getActiveSearchFields(scopeId, searchFieldMap) {
+  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
+  const validSelected = selected.filter(field => searchFieldMap[field]);
+  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
+}
+
+function matchesScopedSearch(record, search, searchFields) {
+  return searchFields.some(field => normalizeSearch(flattenSearchValue(DOCUMENT_ARCHIVE_SEARCH_FIELDS[field](record))).includes(search));
+}
+
+function flattenSearchValue(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
 }
 
 async function apiGet(path) {

@@ -40,10 +40,24 @@
       </div>
 
       <form class="filter-form parts-archive-filter-form" id="filterForm">
-        <label class="field">
+        <div class="field search-field">
           <span>Search</span>
-          <input id="searchInput" autocomplete="off" placeholder="Part number, name, description">
-        </label>
+          <div class="search-field-control">
+            <input id="searchInput" autocomplete="off" placeholder="Part number, name, description">
+            <details class="search-scope" id="partArchiveSearchScope" data-search-scope>
+              <summary><span data-search-scope-label>All fields</span></summary>
+              <div class="search-scope-menu" aria-label="Search part archive fields">
+                <label class="search-scope-option"><input type="checkbox" value="archived_part_number" data-search-scope-option data-label="Archived Part Number">Archived Part Number</label>
+                <label class="search-scope-option"><input type="checkbox" value="current_part_number" data-search-scope-option data-label="Current Part Number">Current Part Number</label>
+                <label class="search-scope-option"><input type="checkbox" value="part_name" data-search-scope-option data-label="Part Name">Part Name</label>
+                <label class="search-scope-option"><input type="checkbox" value="description" data-search-scope-option data-label="Description">Description</label>
+                <label class="search-scope-option"><input type="checkbox" value="main_category" data-search-scope-option data-label="Main Category">Main Category</label>
+                <label class="search-scope-option"><input type="checkbox" value="sub_category" data-search-scope-option data-label="Sub Category">Sub Category</label>
+                <label class="search-scope-option"><input type="checkbox" value="project_code" data-search-scope-option data-label="Project Code">Project Code</label>
+              </div>
+            </details>
+          </div>
+        </div>
 
         <label class="field">
           <span>Project</span>

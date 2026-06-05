@@ -3,6 +3,16 @@ const state = {
 };
 
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
+const PART_ARCHIVE_SEARCH_SCOPE_ID = "partArchiveSearchScope";
+const PART_ARCHIVE_SEARCH_FIELDS = {
+  archived_part_number: record => record.part_number,
+  current_part_number: record => record.current_part_number,
+  part_name: record => record.part_name,
+  description: record => record.description,
+  main_category: record => record.main_category,
+  sub_category: record => record.sub_category,
+  project_code: record => record.project_code
+};
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -86,21 +96,13 @@ function getFilteredArchive() {
   const search = normalizeSearch(elements.searchInput.value);
   const project = elements.projectFilter.value;
   const main = elements.mainFilter.value;
+  const searchFields = getActiveSearchFields(PART_ARCHIVE_SEARCH_SCOPE_ID, PART_ARCHIVE_SEARCH_FIELDS);
 
   return state.archive.filter(record => {
     if (project && record.project_code !== project) return false;
     if (main && record.main_category !== main) return false;
     if (!search) return true;
-    const haystack = normalizeSearch([
-      record.part_number,
-      record.current_part_number,
-      record.part_name,
-      record.description,
-      record.main_category,
-      record.sub_category,
-      record.project_code
-    ].join(" "));
-    return haystack.includes(search);
+    return matchesScopedSearch(record, search, searchFields);
   });
 }
 
@@ -108,7 +110,22 @@ function clearFilters() {
   elements.searchInput.value = "";
   elements.projectFilter.value = "";
   elements.mainFilter.value = "";
+  window.XeraSearchScopes?.clear(PART_ARCHIVE_SEARCH_SCOPE_ID);
   renderArchive();
+}
+
+function getActiveSearchFields(scopeId, searchFieldMap) {
+  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
+  const validSelected = selected.filter(field => searchFieldMap[field]);
+  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
+}
+
+function matchesScopedSearch(record, search, searchFields) {
+  return searchFields.some(field => normalizeSearch(flattenSearchValue(PART_ARCHIVE_SEARCH_FIELDS[field](record))).includes(search));
+}
+
+function flattenSearchValue(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
 }
 
 async function apiGet(path) {

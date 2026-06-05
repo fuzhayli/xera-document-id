@@ -856,7 +856,7 @@ p {
 }
 
 .parts-archive-filter-form {
-  grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(160px, 240px)) auto;
+  grid-template-columns: minmax(340px, 1fr) repeat(2, minmax(160px, 240px)) auto;
 }
 
 .field {
