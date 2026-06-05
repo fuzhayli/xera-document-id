@@ -163,6 +163,13 @@ async function loadPreview() {
 
   elements.previewState.textContent = "Checking";
   elements.submitBtn.disabled = true;
+  applyLocalPartNumberPreview();
+
+  const duplicatePartName = findDuplicatePartName(elements.partName.value);
+  if (duplicatePartName) {
+    renderPreviewErrors([formatDuplicatePartNameError(duplicatePartName)], { preservePreview: true });
+    return;
+  }
 
   try {
     const data = await apiPost("/api/parts/preview", collectFormData(), state.previewController.signal);
@@ -177,18 +184,17 @@ async function loadPreview() {
       elements.submitBtn.disabled = false;
       hideMessage();
     } else {
-      renderPreviewErrors(data.errors || ["Validation failed."]);
+      renderPreviewErrors(data.errors || ["Validation failed."], { preservePreview: true });
     }
   } catch (error) {
     if (error.name === "AbortError") return;
-    renderPreviewErrors([error.message]);
+    renderPreviewErrors([error.message], { preservePreview: true });
   }
 }
 
-function renderPreviewErrors(errors) {
+function renderPreviewErrors(errors, options = {}) {
   state.previewValid = false;
-  elements.partNumberPreview.textContent = "-";
-  elements.mainCategoryPreview.textContent = "-";
+  if (!options.preservePreview) resetPreviewDisplay();
   elements.previewState.textContent = "Check required";
   elements.submitBtn.disabled = true;
   showMessage(errors.join(" "), "warning");
@@ -197,6 +203,12 @@ function renderPreviewErrors(errors) {
 async function submitRequest(event) {
   event.preventDefault();
   elements.submitBtn.disabled = true;
+
+  const duplicatePartName = findDuplicatePartName(elements.partName.value);
+  if (duplicatePartName) {
+    renderPreviewErrors([formatDuplicatePartNameError(duplicatePartName)], { preservePreview: true });
+    return;
+  }
 
   try {
     const data = await apiPost("/api/parts/requests", collectFormData());
@@ -308,6 +320,154 @@ function clearTextFields() {
   elements.subCategory.value = "";
 }
 
+function applyLocalPartNumberPreview() {
+  const suggestion = getLocalPartNumberSuggestion();
+  if (!suggestion) {
+    if (!state.partNumberTouched) elements.partNumber.value = "";
+    resetPreviewDisplay();
+    return null;
+  }
+
+  if (!state.partNumberTouched || !elements.partNumber.value.trim()) {
+    elements.partNumber.value = suggestion.partNumber;
+  }
+
+  elements.partNumberPreview.textContent = suggestion.partNumber;
+  elements.mainCategoryPreview.textContent = normalizeDisplayText(suggestion.mainCategory);
+  return suggestion;
+}
+
+function getLocalPartNumberSuggestion() {
+  const projectCode = elements.projectCode.value;
+  const mainCode = elements.mainCode.value;
+  const revisionMode = elements.revisionMode.value;
+  const revisionCode = sanitizeCompactValue(elements.revisionCode.value);
+  const mainCodeRule = state.rules.main_codes.find(rule => rule.code === mainCode);
+
+  if (!state.rules.projects.some(project => project.code === projectCode)) return null;
+  if (!mainCodeRule) return null;
+  if (!isRevisionCodeAllowed(revisionMode, revisionCode)) return null;
+
+  const sequenceNo = getNextAvailableLocalSequence(projectCode, mainCode);
+  if (!sequenceNo) return null;
+
+  return {
+    partNumber: `${projectCode}-${mainCode}${sequenceNo}-${revisionCode}`,
+    sequenceNo,
+    mainCategory: mainCodeRule.name
+  };
+}
+
+function getNextAvailableLocalSequence(projectCode, mainCode) {
+  const usedSequences = getUsedLocalSequences(projectCode, mainCode);
+  const firstSequence = getPartSequenceMinimum(projectCode, mainCode);
+
+  for (let candidate = firstSequence; candidate <= 999; candidate += 1) {
+    const sequenceNo = String(candidate).padStart(3, "0");
+    if (!usedSequences.has(sequenceNo)) return sequenceNo;
+  }
+
+  return "";
+}
+
+function getUsedLocalSequences(projectCode, mainCode) {
+  const usedSequences = new Set();
+  const rows = [
+    ...state.parts,
+    ...state.requests.filter(request => request.status !== "rejected")
+  ];
+
+  for (const row of rows) {
+    const parsed = getPartBaseFromRow(row);
+    if (parsed && parsed.projectCode === projectCode && parsed.mainCode === mainCode) {
+      usedSequences.add(parsed.sequenceNo);
+    }
+  }
+
+  return usedSequences;
+}
+
+function getPartBaseFromRow(row) {
+  const projectCode = sanitizeCompactValue(row.project_code);
+  const mainCode = sanitizeMainCodeValue(row.main_code);
+  const sequenceNo = sanitizeSequenceValue(row.sequence_no);
+
+  if (projectCode && mainCode && sequenceNo) {
+    return { projectCode, mainCode, sequenceNo };
+  }
+
+  const match = sanitizePartNumberValue(row.part_number).match(/^([A-Z0-9]+)-([1-9])(\d{3})-[A-Z0-9]+$/);
+  if (!match) return null;
+
+  return {
+    projectCode: match[1],
+    mainCode: match[2],
+    sequenceNo: match[3]
+  };
+}
+
+function getPartSequenceMinimum(projectCode, mainCode) {
+  if (projectCode === "X102" && mainCode === "2") return 100;
+  return 1;
+}
+
+function isRevisionCodeAllowed(revisionMode, revisionCode) {
+  const selected = state.rules.revision_modes.find(mode => mode.code === revisionMode);
+  if (!selected || !revisionCode) return false;
+  return new RegExp(selected.pattern).test(revisionCode);
+}
+
+function findDuplicatePartName(value) {
+  const partName = sanitizePartNameValue(value);
+  if (!partName) return null;
+
+  const part = state.parts.find(row => sanitizePartNameValue(row.part_name) === partName);
+  if (part) return { ...part, duplicateSource: "part" };
+
+  const request = state.requests.find(row =>
+    row.status !== "rejected" && sanitizePartNameValue(row.part_name) === partName
+  );
+  if (request) return { ...request, duplicateSource: "request" };
+
+  return null;
+}
+
+function formatDuplicatePartNameError(duplicate) {
+  const partNumber = duplicate.part_number || `request #${duplicate.id}`;
+  return `Part name ${duplicate.part_name} is already used by ${partNumber}.`;
+}
+
+function resetPreviewDisplay() {
+  elements.partNumberPreview.textContent = "-";
+  elements.mainCategoryPreview.textContent = "-";
+}
+
+function sanitizePartNameValue(value) {
+  return normalizeDisplayText(value)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function sanitizePartNumberValue(value) {
+  return normalizeDisplayText(value).toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9-]/g, "");
+}
+
+function sanitizeCompactValue(value) {
+  return normalizeDisplayText(value).toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+}
+
+function sanitizeMainCodeValue(value) {
+  return String(value ?? "").replace(/[^1-9]/g, "").slice(0, 1);
+}
+
+function sanitizeSequenceValue(value) {
+  const sequence = String(value ?? "").replace(/\D/g, "");
+  if (!/^\d{1,3}$/.test(sequence)) return "";
+  return sequence.padStart(3, "0");
+}
+
 async function apiGet(path) {
   const response = await fetch(path, {
     headers: Auth.authHeaders()
@@ -365,18 +525,18 @@ function formatDateTime(value) {
 
 function normalizeDisplayText(value) {
   return String(value ?? "")
-    .replaceAll("İ", "I")
-    .replaceAll("ı", "i")
-    .replaceAll("Ğ", "G")
-    .replaceAll("ğ", "g")
-    .replaceAll("Ü", "U")
-    .replaceAll("ü", "u")
-    .replaceAll("Ş", "S")
-    .replaceAll("ş", "s")
-    .replaceAll("Ö", "O")
-    .replaceAll("ö", "o")
-    .replaceAll("Ç", "C")
-    .replaceAll("ç", "c");
+    .replaceAll("Ä°", "I")
+    .replaceAll("Ä±", "i")
+    .replaceAll("Ä", "G")
+    .replaceAll("ÄŸ", "g")
+    .replaceAll("Ãœ", "U")
+    .replaceAll("Ã¼", "u")
+    .replaceAll("Å", "S")
+    .replaceAll("ÅŸ", "s")
+    .replaceAll("Ã–", "O")
+    .replaceAll("Ã¶", "o")
+    .replaceAll("Ã‡", "C")
+    .replaceAll("Ã§", "c");
 }
 
 function uniqueSorted(values) {
