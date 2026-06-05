@@ -2084,6 +2084,16 @@ tbody tr:last-child td {
   box-shadow: var(--shadow);
 }
 
+.auth-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.signup-actions .primary-btn,
+.signup-actions .secondary-btn {
+  width: 100%;
+}
+
 .auth-row,
 .auth-actions.split {
   display: flex;
@@ -2140,6 +2150,20 @@ tbody tr:last-child td {
 .auth-create {
   border-color: var(--primary);
   color: var(--primary);
+}
+
+.auth-dialog-panel {
+  gap: 20px;
+}
+
+.auth-warning-icon {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.auth-dialog-actions {
+  width: 100%;
+  justify-content: center;
 }
 
 .auth-note {

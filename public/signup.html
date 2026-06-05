@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <script>
     (function() {
@@ -49,11 +49,50 @@
 
         <div id="messageBox" class="message-box hidden"></div>
 
-        <div class="auth-actions split">
+        <div class="auth-actions signup-actions">
+          <button class="primary-btn" id="createAccountBtn" type="submit">Create Account</button>
           <a class="secondary-btn" id="loginLink" href="/login.html">Login</a>
-          <button class="primary-btn" type="submit">Create Account</button>
         </div>
       </form>
+
+      <div class="request-success-modal hidden" id="loginConfirmModal" role="dialog" aria-modal="true" aria-labelledby="loginConfirmTitle">
+        <div class="request-success-backdrop" id="loginConfirmBackdrop"></div>
+        <section class="request-success-panel auth-dialog-panel">
+          <div class="request-success-icon auth-warning-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 9v4"></path>
+              <path d="M12 17h.01"></path>
+              <path d="M10.3 4.5 2.7 18a1.8 1.8 0 0 0 1.6 2.7h15.4a1.8 1.8 0 0 0 1.6-2.7L13.7 4.5a2 2 0 0 0-3.4 0Z"></path>
+            </svg>
+          </div>
+          <div>
+            <h2 id="loginConfirmTitle">Leave without creating an account?</h2>
+            <p>Your account has not been created yet. Any information entered on this page will be lost.</p>
+          </div>
+          <div class="success-actions auth-dialog-actions">
+            <button class="primary-btn" id="stayOnSignupBtn" type="button">Stay and Create Account</button>
+            <button class="secondary-btn" id="confirmLoginBtn" type="button">Go to Login</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="request-success-modal hidden" id="signupSuccessModal" role="dialog" aria-modal="true" aria-labelledby="signupSuccessTitle">
+        <div class="request-success-backdrop"></div>
+        <section class="request-success-panel auth-dialog-panel">
+          <div class="request-success-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="m5 12 4 4L19 6"></path>
+            </svg>
+          </div>
+          <div>
+            <h2 id="signupSuccessTitle">Account created successfully</h2>
+            <p>Your XERA account has been created successfully.</p>
+          </div>
+          <div class="success-actions auth-dialog-actions">
+            <button class="primary-btn" id="continueAfterSignupBtn" type="button">Continue</button>
+          </div>
+        </section>
+      </div>
 
       <div class="auth-note">
         <span class="note-icon" aria-hidden="true"></span>
