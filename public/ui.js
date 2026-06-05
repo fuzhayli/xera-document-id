@@ -53,6 +53,7 @@
   ];
 
   document.addEventListener("DOMContentLoaded", initChrome);
+  document.addEventListener("DOMContentLoaded", disableFilterFormEnter);
 
   async function initChrome() {
     if (document.body.classList.contains("auth-page") || document.body.classList.contains("embed-mode") || isEmbedRequest()) return;
@@ -67,6 +68,19 @@
 
   function isEmbedRequest() {
     return Boolean(new URLSearchParams(window.location.search).get("embed"));
+  }
+
+  function disableFilterFormEnter() {
+    document.querySelectorAll(".filter-form").forEach(form => {
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+      });
+      form.addEventListener("keydown", event => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        event.stopPropagation();
+      }, true);
+    });
   }
 
   function wrapExistingContent() {
