@@ -176,7 +176,7 @@
         <span class="sidebar-footer-icon">${ICONS.shield}</span>
         <span>
           <strong>XERA Control Center</strong>
-          <small>&copy; 2024 XERA. All rights reserved.</small>
+          <small>&copy; 2026 XERA. All rights reserved.</small>
         </span>
       </div>
     `;
