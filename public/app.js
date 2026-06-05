@@ -295,6 +295,7 @@ function bindEvents() {
   elements.newRequestAfterSubmitBtn.addEventListener("click", resetRequestScreen);
   elements.closeAfterSubmitBtn.addEventListener("click", closeRequestScreen);
   window.addEventListener("popstate", () => setView(getInitialView(), { skipUrlUpdate: true }));
+  window.addEventListener("xera-notifications-updated", loadDashboardOverview);
 }
 
 function openNewRequest() {
@@ -888,7 +889,7 @@ function buildOverviewFromRequests(requests, notifications = []) {
 
 function buildPartOverviewFromRequests(requests, notifications = []) {
   return {
-    notifications: countUnreadEntityNotifications(notifications, "part_record"),
+    notifications: countUnreadPartNotifications(notifications),
     created: requests.length,
     reviewed: requests.filter(request => isReviewedByAdmin(request)).length,
     sequences: new Set(
@@ -920,6 +921,26 @@ function countUnreadEntityNotifications(notifications, entityType) {
   return notifications.filter(notification =>
     notification.status === "unread" && notification.entity_type === entityType
   ).length;
+}
+
+function countUnreadPartNotifications(notifications) {
+  return notifications.filter(notification =>
+    notification.status === "unread" && isPartNotification(notification)
+  ).length;
+}
+
+function isPartNotification(notification) {
+  if (["part_record", "part_request", "part_revision_request"].includes(notification.entity_type)) return true;
+  if (String(notification.type || "").startsWith("part_")) return true;
+  return parseNotificationMetadata(notification).domain === "part";
+}
+
+function parseNotificationMetadata(notification) {
+  try {
+    return JSON.parse(notification.metadata_json || "{}") || {};
+  } catch {
+    return {};
+  }
 }
 
 function isReviewedByAdmin(request) {

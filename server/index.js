@@ -1518,9 +1518,11 @@ async function createPartRequest(user, body) {
 
 async function approvePartRequest(requestId, user) {
   return await db.transaction(async () => {
-    return await publishPartRequestInTransaction(requestId, user, {
+    const result = await publishPartRequestInTransaction(requestId, user, {
       auditAction: "part_request.approved"
     });
+    await notifyPartRequestDecision(result.request, user, "approved", result.part);
+    return result;
   });
 }
 
@@ -1591,6 +1593,7 @@ async function rejectPartRequest(requestId, user, reason) {
 
   const after = await getPartRequestById(requestId);
   await insertAudit(user.id, "part_request", requestId, "part_request.rejected", before, after);
+  await notifyPartRequestDecision(after, user, "rejected");
   return { request: after };
 }
 
@@ -1730,6 +1733,7 @@ async function approvePartRevisionRequest(requestId, user) {
     const afterRequest = await getPartRevisionRequestById(requestId);
     const part = await getPartRecordById(Number(insertResult.lastInsertRowid));
     await insertAudit(user.id, "part_revision_request", requestId, "part_revision_request.approved", beforeRequest, afterRequest);
+    await notifyPartRevisionDecision(afterRequest, user, "approved", part);
     return { revision_request: afterRequest, part };
   });
 }
@@ -1752,6 +1756,7 @@ async function rejectPartRevisionRequest(requestId, user, reason) {
 
   const after = await getPartRevisionRequestById(requestId);
   await insertAudit(user.id, "part_revision_request", requestId, "part_revision_request.rejected", before, after);
+  await notifyPartRevisionDecision(after, user, "rejected");
   return { revision_request: after };
 }
 
@@ -3743,6 +3748,71 @@ async function notifyRequesterOfAdminReview(notification, admin, result, action)
       label,
       admin: admin.display_name,
       action
+    }
+  });
+}
+
+async function notifyPartRequestDecision(request, admin, decision, part = null) {
+  if (!request || !request.requested_by_user_id) return;
+
+  const isApproved = decision === "approved";
+  const label = request.part_number || `Part request #${request.id}`;
+  const reason = request.reject_reason || "";
+  const body = isApproved
+    ? `${label} was approved by ${admin.display_name}.`
+    : `${label} was rejected by ${admin.display_name}.${reason ? ` Reason: ${reason}` : ""}`;
+
+  await createNotification({
+    recipientUserId: request.requested_by_user_id,
+    sourceUserId: admin.id,
+    type: `part_request_${decision}`,
+    entityType: isApproved && part ? "part_record" : "part_request",
+    entityId: isApproved && part ? part.id : request.id,
+    relatedRequestId: request.id,
+    title: isApproved ? "Part request approved" : "Part request rejected",
+    body,
+    metadata: {
+      domain: "part",
+      kind: "part_request",
+      action: decision,
+      label,
+      request_id: request.id,
+      part_number: request.part_number,
+      part_name: request.part_name,
+      reason
+    }
+  });
+}
+
+async function notifyPartRevisionDecision(revisionRequest, admin, decision, part = null) {
+  if (!revisionRequest || !revisionRequest.requested_by_user_id) return;
+
+  const isApproved = decision === "approved";
+  const label = revisionRequest.requested_part_number || `Part revision request #${revisionRequest.id}`;
+  const reason = revisionRequest.reject_reason || "";
+  const body = isApproved
+    ? `${label} was approved by ${admin.display_name}.`
+    : `${label} was rejected by ${admin.display_name}.${reason ? ` Reason: ${reason}` : ""}`;
+
+  await createNotification({
+    recipientUserId: revisionRequest.requested_by_user_id,
+    sourceUserId: admin.id,
+    type: `part_revision_${decision}`,
+    entityType: isApproved && part ? "part_record" : "part_revision_request",
+    entityId: isApproved && part ? part.id : revisionRequest.id,
+    relatedRequestId: revisionRequest.id,
+    title: isApproved ? "Part revision approved" : "Part revision rejected",
+    body,
+    metadata: {
+      domain: "part",
+      kind: "part_revision_request",
+      action: decision,
+      label,
+      request_id: revisionRequest.id,
+      current_part_number: revisionRequest.current_part_number,
+      requested_part_number: revisionRequest.requested_part_number,
+      requested_revision_code: revisionRequest.requested_revision_code,
+      reason
     }
   });
 }

@@ -230,7 +230,7 @@ async function refreshRequests() {
 function renderRequests() {
   elements.requestCount.textContent = `${state.requests.length} records`;
   if (state.requests.length === 0) {
-    elements.requestsBody.innerHTML = '<tr><td colspan="7" class="empty-cell">No records</td></tr>';
+    elements.requestsBody.innerHTML = '<tr><td colspan="8" class="empty-cell">No records</td></tr>';
     return;
   }
 
@@ -242,9 +242,16 @@ function renderRequests() {
       <td>${escapeHtml(normalizeDisplayText(request.main_category))}</td>
       <td>${escapeHtml(normalizeDisplayText(request.sub_category || "-"))}</td>
       <td>${escapeHtml(request.checked_by || "-")}</td>
+      <td>${escapeHtml(getPartRequestResultNote(request))}</td>
       <td>${formatDateTime(request.created_at)}</td>
     </tr>
   `).join("");
+}
+
+function getPartRequestResultNote(request) {
+  if (request.status === "rejected") return request.reject_reason || "Rejected";
+  if (request.status === "approved") return request.checked_by ? `Approved by ${request.checked_by}` : "Approved";
+  return "-";
 }
 
 function clearForm() {

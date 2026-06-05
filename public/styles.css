@@ -449,6 +449,96 @@ p {
   line-height: 1;
 }
 
+.notification-center {
+  position: fixed;
+  top: 76px;
+  right: 24px;
+  z-index: 120;
+  width: min(420px, calc(100vw - 28px));
+  max-height: min(620px, calc(100vh - 96px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, .18);
+  overflow: hidden;
+}
+
+.notification-center-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.notification-center-head strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.notification-center-head span,
+.notification-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notification-list {
+  overflow: auto;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 18px 16px;
+}
+
+.notification-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.notification-item:last-child {
+  border-bottom: 0;
+}
+
+.notification-item.unread {
+  background: var(--primary-soft);
+}
+
+.notification-item-main {
+  min-width: 0;
+}
+
+.notification-item strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.notification-item p {
+  margin: 5px 0 6px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.notification-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .top-link,
 .button-link {
   display: inline-flex;
@@ -1463,6 +1553,12 @@ tbody tr:last-child td {
 .documents-shell .document-name-cell,
 .documents-shell .filename-cell {
   overflow-wrap: anywhere;
+}
+
+.parts-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .documents-shell th:nth-child(1),

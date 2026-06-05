@@ -56,6 +56,8 @@
   document.addEventListener("DOMContentLoaded", disableFilterFormEnter);
   document.addEventListener("DOMContentLoaded", initSearchScopePickers);
   document.addEventListener("click", closeSearchScopesOnOutsideClick);
+  document.addEventListener("click", closeNotificationCenterOnOutsideClick);
+  document.addEventListener("keydown", handleNotificationCenterKeydown);
 
   window.XeraSearchScopes = {
     getSelected(scopeId) {
@@ -234,6 +236,7 @@
       `);
     }
     ensureTopbarActions(strip);
+    setupNotificationCenter();
     await applyNotificationBadge(user);
   }
 
@@ -306,6 +309,146 @@
     } catch {
       // Notification badges are best-effort; page-level lists remain authoritative.
     }
+  }
+
+  function setupNotificationCenter() {
+    ensureNotificationCenter();
+    document.querySelectorAll(".notification-btn").forEach(button => {
+      if (button.dataset.notificationCenterBound === "true") return;
+      button.dataset.notificationCenterBound = "true";
+      button.addEventListener("click", toggleNotificationCenter);
+    });
+  }
+
+  function ensureNotificationCenter() {
+    let panel = document.getElementById("notificationCenter");
+    if (panel) return panel;
+
+    panel = document.createElement("section");
+    panel.id = "notificationCenter";
+    panel.className = "notification-center hidden";
+    panel.setAttribute("aria-label", "Notifications");
+    panel.innerHTML = `
+      <div class="notification-center-head">
+        <div>
+          <strong>Notifications</strong>
+          <span data-notification-summary>Recent request results</span>
+        </div>
+        <button class="compact-btn secondary-btn" type="button" data-notification-close>Close</button>
+      </div>
+      <div class="notification-list" data-notification-list>
+        <p class="notification-empty">No notifications</p>
+      </div>
+    `;
+    panel.addEventListener("click", handleNotificationCenterClick);
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  async function toggleNotificationCenter(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const panel = ensureNotificationCenter();
+    const shouldOpen = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !shouldOpen);
+    if (shouldOpen) await refreshNotificationCenter();
+  }
+
+  async function refreshNotificationCenter() {
+    const panel = ensureNotificationCenter();
+    const list = panel.querySelector("[data-notification-list]");
+    const summary = panel.querySelector("[data-notification-summary]");
+    list.innerHTML = '<p class="notification-empty">Loading notifications...</p>';
+
+    try {
+      const response = await fetch("/api/notifications/my", {
+        headers: Auth.authHeaders()
+      });
+      if (!response.ok) throw new Error("Could not load notifications.");
+      const data = await response.json();
+      const notifications = data.notifications || [];
+      const unreadCount = notifications.filter(notification => notification.status === "unread").length;
+      summary.textContent = unreadCount > 0
+        ? `${unreadCount} unread`
+        : "All caught up";
+      renderNotificationCenterList(notifications);
+      await applyNotificationBadge(await Auth.me());
+    } catch (error) {
+      list.innerHTML = `<p class="notification-empty">${escapeHtml(error.message || "Could not load notifications.")}</p>`;
+    }
+  }
+
+  function renderNotificationCenterList(notifications) {
+    const list = ensureNotificationCenter().querySelector("[data-notification-list]");
+    if (notifications.length === 0) {
+      list.innerHTML = '<p class="notification-empty">No notifications</p>';
+      return;
+    }
+
+    list.innerHTML = notifications.map(notification => {
+      const isUnread = notification.status === "unread";
+      return `
+        <article class="notification-item ${isUnread ? "unread" : ""}" data-notification-id="${notification.id}">
+          <div class="notification-item-main">
+            <strong>${escapeHtml(notification.title || "Notification")}</strong>
+            <p>${escapeHtml(notification.body || "")}</p>
+            <small>${escapeHtml(formatDateTime(notification.created_at))}</small>
+          </div>
+          ${isUnread ? '<button class="compact-btn secondary-btn" type="button" data-notification-read>Mark read</button>' : ""}
+        </article>
+      `;
+    }).join("");
+  }
+
+  async function handleNotificationCenterClick(event) {
+    if (event.target.closest("[data-notification-close]")) {
+      ensureNotificationCenter().classList.add("hidden");
+      return;
+    }
+
+    const readButton = event.target.closest("[data-notification-read]");
+    if (!readButton) return;
+
+    const item = readButton.closest("[data-notification-id]");
+    if (!item) return;
+    readButton.disabled = true;
+
+    try {
+      const response = await fetch(`/api/notifications/${item.dataset.notificationId}/read`, {
+        method: "POST",
+        headers: Auth.authHeaders()
+      });
+      if (!response.ok) throw new Error("Could not update notification.");
+      await refreshNotificationCenter();
+      window.dispatchEvent(new CustomEvent("xera-notifications-updated"));
+    } catch {
+      readButton.disabled = false;
+    }
+  }
+
+  function closeNotificationCenterOnOutsideClick(event) {
+    const panel = document.getElementById("notificationCenter");
+    if (!panel || panel.classList.contains("hidden")) return;
+    if (panel.contains(event.target) || event.target.closest(".notification-btn")) return;
+    panel.classList.add("hidden");
+  }
+
+  function handleNotificationCenterKeydown(event) {
+    if (event.key !== "Escape") return;
+    document.getElementById("notificationCenter")?.classList.add("hidden");
+  }
+
+  function formatDateTime(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("en", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
   }
 
   function escapeHtml(value) {
