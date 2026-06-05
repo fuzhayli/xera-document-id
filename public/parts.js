@@ -299,7 +299,7 @@ function renderParts() {
 async function handlePartAction(event) {
   const row = event.target.closest("tr[data-part-id]");
   if (!row) return;
-  const part = state.parts.find(record => Number(record.id) === Number(row.datasetPartId));
+  const part = state.parts.find(record => Number(record.id) === Number(row.dataset.partId));
   if (!part) return;
   openPartActionModal(part);
 }
