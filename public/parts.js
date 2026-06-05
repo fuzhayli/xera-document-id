@@ -299,7 +299,7 @@ function renderParts() {
 async function handlePartAction(event) {
   const row = event.target.closest("tr[data-part-id]");
   if (!row) return;
-  const part = state.parts.find(record => Number(record.id) === Number(row.dataset.partId));
+  const part = state.parts.find(record => Number(record.id) === Number(row.datasetPartId));
   if (!part) return;
   openPartActionModal(part);
 }
@@ -540,7 +540,7 @@ function formatPartName(value) {
         .split("_")
         .map((segment, index, segments) => {
           const suffix = index < segments.length - 1 ? "_" : "";
-          return `<span class="part-name-token">${escapeHtml(segment + suffix)}</span>`;
+          return `<span class="part-name-token" style="display:inline-block;white-space:nowrap">${escapeHtml(segment + suffix)}</span>`;
         })
         .join("");
     })
