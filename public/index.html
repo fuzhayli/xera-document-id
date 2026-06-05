@@ -5,6 +5,10 @@
     (function() {
       const t = localStorage.getItem('xera-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.setAttribute('data-theme', t);
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("embed") === "request") {
+        document.documentElement.classList.add("embed-pending");
+      }
     })();
   </script>
   <meta charset="utf-8">

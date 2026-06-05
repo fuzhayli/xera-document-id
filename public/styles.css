@@ -34,7 +34,8 @@ html {
   min-height: 100%;
 }
 
-html.auth-pending body {
+html.auth-pending body,
+html.embed-pending body {
   visibility: hidden;
 }
 

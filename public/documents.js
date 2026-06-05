@@ -95,8 +95,9 @@ function openRequestModal() {
     window.location.href = `/login.html?next=${encodeURIComponent("/documents.html")}`;
     return;
   }
+  const requestUrl = `${API_BASE}/?embed=request&view=new`;
   if (!elements.requestFrame.src) {
-    elements.requestFrame.src = `${API_BASE}/?embed=request`;
+    elements.requestFrame.src = requestUrl;
   }
   elements.requestModal.classList.remove("hidden");
   document.body.classList.add("modal-open");

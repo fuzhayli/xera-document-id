@@ -324,6 +324,7 @@ function handleOverviewCardClick(event) {
 function applyEmbedMode() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("embed") !== "request") return;
+  document.documentElement.classList.add("embed-pending");
   document.body.classList.add("embed-mode");
 }
 
@@ -351,6 +352,10 @@ async function setView(view, options = {}) {
   elements.overviewViewBtn.classList.toggle("active", showOverview);
   elements.newRequestViewBtn.classList.toggle("active", showNew);
   elements.myRequestsViewBtn.classList.toggle("active", showMy);
+
+  if (document.body.classList.contains("embed-mode") && showNew) {
+    document.documentElement.classList.remove("embed-pending");
+  }
 
   if (showOverview) await loadDashboardOverview();
   if (showMy) await loadRequests();
