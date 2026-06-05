@@ -841,18 +841,18 @@ p {
 
 .filter-form {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(160px, 240px)) auto;
+  grid-template-columns: minmax(340px, 1fr) repeat(2, minmax(160px, 240px)) auto;
   gap: 16px;
   align-items: end;
 }
 
 .parts-filter-form {
-  grid-template-columns: minmax(240px, 1fr) repeat(4, minmax(120px, 200px)) auto;
+  grid-template-columns: minmax(340px, 1.2fr) repeat(5, minmax(120px, 180px)) auto;
   gap: 12px;
 }
 
 .hardware-filter-form {
-  grid-template-columns: minmax(260px, 1fr) minmax(180px, 300px) auto;
+  grid-template-columns: minmax(340px, 1fr) minmax(180px, 300px) auto;
 }
 
 .parts-archive-filter-form {
@@ -896,6 +896,111 @@ p {
   background: var(--surface-soft);
   color: var(--muted-strong);
   cursor: not-allowed;
+}
+
+.search-field-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.search-field-control input {
+  border-radius: 8px 0 0 8px;
+}
+
+.search-scope {
+  position: relative;
+}
+
+.search-scope summary {
+  display: inline-flex;
+  width: 136px;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  list-style: none;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.search-scope summary::-webkit-details-marker {
+  display: none;
+}
+
+.search-scope summary::after {
+  margin-left: 7px;
+  color: var(--muted);
+  content: "v";
+  font-size: 11px;
+}
+
+.search-scope[open] summary {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-ring);
+}
+
+.search-scope summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-scope-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: 320px;
+  gap: 4px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.search-scope-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.search-scope-option:hover {
+  background: var(--surface-muted);
+}
+
+.field .search-scope-option input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  min-height: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--primary);
 }
 
 .choice-field {

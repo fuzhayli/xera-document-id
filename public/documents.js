@@ -17,6 +17,21 @@ const CATEGORY_LABELS = {
   MARKETING: "MARKETING (Marketing Material ID)"
 };
 const REVISION_CATEGORIES = ["D", "MD", "EC", "QMS", "SOP"];
+const DOCUMENT_SEARCH_SCOPE_ID = "documentSearchScope";
+const DOCUMENT_SEARCH_FIELDS = {
+  document_no: documentRecord => documentRecord.document_no,
+  category: documentRecord => [documentRecord.category, formatCategory(documentRecord.category)],
+  year: documentRecord => documentRecord.year_yy,
+  revision: documentRecord => documentRecord.revision,
+  filename: documentRecord => documentRecord.generated_filename,
+  document_name: documentRecord => documentRecord.document_name,
+  reference: documentRecord => documentRecord.reference_value,
+  written_by: documentRecord => documentRecord.written_by,
+  creation_date: documentRecord => documentRecord.creation_date,
+  checked_by: documentRecord => documentRecord.checked_by,
+  reviewed_at: documentRecord => [documentRecord.approved_at, documentRecord.approved_at ? formatDateTime(documentRecord.approved_at) : ""],
+  revision_updated: documentRecord => [documentRecord.revision_updated_at, documentRecord.revision_updated_at ? formatDateTime(documentRecord.revision_updated_at) : ""]
+};
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -263,25 +278,14 @@ function getFilteredDocuments() {
   const search = normalizeSearch(elements.searchInput.value);
   const category = elements.categoryFilter.value;
   const year = elements.yearFilter.value;
+  const searchFields = getActiveSearchFields(DOCUMENT_SEARCH_SCOPE_ID, DOCUMENT_SEARCH_FIELDS);
 
   return state.documents.filter(documentRecord => {
     if (category && documentRecord.category !== category) return false;
     if (year && documentRecord.year_yy !== year) return false;
     if (!search) return true;
 
-    const haystack = normalizeSearch([
-      documentRecord.document_no,
-      documentRecord.generated_filename,
-      documentRecord.document_name,
-      documentRecord.reference_value,
-      documentRecord.written_by,
-      documentRecord.checked_by,
-      documentRecord.creation_date,
-      documentRecord.revision,
-      documentRecord.revision_updated_at,
-      documentRecord.category
-    ].join(" "));
-    return haystack.includes(search);
+    return matchesScopedSearch(documentRecord, search, searchFields);
   });
 }
 
@@ -289,7 +293,22 @@ function clearFilters() {
   elements.searchInput.value = "";
   elements.categoryFilter.value = "";
   elements.yearFilter.value = "";
+  window.XeraSearchScopes?.clear(DOCUMENT_SEARCH_SCOPE_ID);
   renderDocuments();
+}
+
+function getActiveSearchFields(scopeId, searchFieldMap) {
+  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
+  const validSelected = selected.filter(field => searchFieldMap[field]);
+  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
+}
+
+function matchesScopedSearch(record, search, searchFields) {
+  return searchFields.some(field => normalizeSearch(flattenSearchValue(DOCUMENT_SEARCH_FIELDS[field](record))).includes(search));
+}
+
+function flattenSearchValue(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
 }
 
 async function apiGet(path) {

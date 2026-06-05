@@ -54,6 +54,24 @@
 
   document.addEventListener("DOMContentLoaded", initChrome);
   document.addEventListener("DOMContentLoaded", disableFilterFormEnter);
+  document.addEventListener("DOMContentLoaded", initSearchScopePickers);
+  document.addEventListener("click", closeSearchScopesOnOutsideClick);
+
+  window.XeraSearchScopes = {
+    getSelected(scopeId) {
+      const picker = document.getElementById(scopeId);
+      if (!picker) return [];
+      return [...picker.querySelectorAll("[data-search-scope-option]:checked")].map(input => input.value);
+    },
+    clear(scopeId) {
+      const picker = document.getElementById(scopeId);
+      if (!picker) return;
+      picker.querySelectorAll("[data-search-scope-option]").forEach(input => {
+        input.checked = false;
+      });
+      updateSearchScopeLabel(picker);
+    }
+  };
 
   async function initChrome() {
     if (document.body.classList.contains("auth-page") || document.body.classList.contains("embed-mode") || isEmbedRequest()) return;
@@ -77,9 +95,48 @@
       });
       form.addEventListener("keydown", event => {
         if (event.key !== "Enter") return;
+        if (!isTextEntryField(event.target)) return;
         event.preventDefault();
         event.stopPropagation();
       }, true);
+    });
+  }
+
+  function isTextEntryField(target) {
+    const tagName = String(target?.tagName || "").toLowerCase();
+    const inputType = String(target?.type || "").toLowerCase();
+    if (tagName === "textarea") return true;
+    return tagName === "input" && !["button", "checkbox", "file", "radio", "reset", "submit"].includes(inputType);
+  }
+
+  function initSearchScopePickers() {
+    document.querySelectorAll("[data-search-scope]").forEach(picker => {
+      picker.querySelectorAll("[data-search-scope-option]").forEach(input => {
+        input.addEventListener("change", () => updateSearchScopeLabel(picker));
+      });
+      picker.addEventListener("keydown", event => {
+        if (event.key === "Escape") picker.open = false;
+      });
+      updateSearchScopeLabel(picker);
+    });
+  }
+
+  function updateSearchScopeLabel(picker) {
+    const label = picker.querySelector("[data-search-scope-label]");
+    if (!label) return;
+    const selected = [...picker.querySelectorAll("[data-search-scope-option]:checked")];
+    if (selected.length === 0) {
+      label.textContent = "All fields";
+    } else if (selected.length === 1) {
+      label.textContent = selected[0].dataset.label || selected[0].value;
+    } else {
+      label.textContent = `${selected.length} fields`;
+    }
+  }
+
+  function closeSearchScopesOnOutsideClick(event) {
+    document.querySelectorAll("[data-search-scope][open]").forEach(picker => {
+      if (!picker.contains(event.target)) picker.open = false;
     });
   }
 

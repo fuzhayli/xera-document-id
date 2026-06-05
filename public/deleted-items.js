@@ -2,6 +2,15 @@ const state = {
   items: [],
   currentUser: null
 };
+const DELETED_SEARCH_SCOPE_ID = "deletedSearchScope";
+const DELETED_SEARCH_FIELDS = {
+  type: item => formatType(item.entity_type),
+  record: item => item.display_key,
+  name: item => getRecordName(item, item.record || {}),
+  details: item => getRecordDetails(item, item.record || {}),
+  deleted_by: item => item.deleted_by,
+  deleted_at: item => [item.deleted_at, item.deleted_at ? formatDateTime(item.deleted_at) : ""]
+};
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -95,27 +104,13 @@ function renderDeletedItems() {
 function getFilteredItems() {
   const search = normalizeSearch(elements.searchInput.value);
   const type = elements.typeFilter.value;
+  const searchFields = getActiveSearchFields(DELETED_SEARCH_SCOPE_ID, DELETED_SEARCH_FIELDS);
 
   return state.items.filter(item => {
     if (type && item.entity_type !== type) return false;
     if (!search) return true;
 
-    const record = item.record || {};
-    const haystack = normalizeSearch([
-      item.entity_type,
-      item.display_key,
-      item.deleted_by,
-      item.deleted_at,
-      record.document_no,
-      record.document_name,
-      record.generated_filename,
-      record.part_number,
-      record.part_name,
-      record.description,
-      record.main_category,
-      record.sub_category
-    ].join(" "));
-    return haystack.includes(search);
+    return matchesScopedSearch(item, search, searchFields);
   });
 }
 
@@ -134,7 +129,22 @@ function getRecordDetails(item, record) {
 function clearFilters() {
   elements.searchInput.value = "";
   elements.typeFilter.value = "";
+  window.XeraSearchScopes?.clear(DELETED_SEARCH_SCOPE_ID);
   renderDeletedItems();
+}
+
+function getActiveSearchFields(scopeId, searchFieldMap) {
+  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
+  const validSelected = selected.filter(field => searchFieldMap[field]);
+  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
+}
+
+function matchesScopedSearch(item, search, searchFields) {
+  return searchFields.some(field => normalizeSearch(flattenSearchValue(DELETED_SEARCH_FIELDS[field](item))).includes(search));
+}
+
+function flattenSearchValue(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
 }
 
 async function apiGet(path) {

@@ -42,10 +42,23 @@
       </div>
 
       <form class="filter-form" id="filterForm">
-        <label class="field">
+        <div class="field search-field">
           <span>Search</span>
-          <input id="searchInput" autocomplete="off" placeholder="Document no, part number, name, deleted by">
-        </label>
+          <div class="search-field-control">
+            <input id="searchInput" autocomplete="off" placeholder="Document no, part number, name, deleted by">
+            <details class="search-scope" id="deletedSearchScope" data-search-scope>
+              <summary><span data-search-scope-label>All fields</span></summary>
+              <div class="search-scope-menu" aria-label="Search deleted item fields">
+                <label class="search-scope-option"><input type="checkbox" value="type" data-search-scope-option data-label="Type">Type</label>
+                <label class="search-scope-option"><input type="checkbox" value="record" data-search-scope-option data-label="Record">Record</label>
+                <label class="search-scope-option"><input type="checkbox" value="name" data-search-scope-option data-label="Name">Name</label>
+                <label class="search-scope-option"><input type="checkbox" value="details" data-search-scope-option data-label="Details">Details</label>
+                <label class="search-scope-option"><input type="checkbox" value="deleted_by" data-search-scope-option data-label="Deleted By">Deleted By</label>
+                <label class="search-scope-option"><input type="checkbox" value="deleted_at" data-search-scope-option data-label="Deleted At">Deleted At</label>
+              </div>
+            </details>
+          </div>
+        </div>
 
         <label class="field">
           <span>Type</span>

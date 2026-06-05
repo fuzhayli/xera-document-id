@@ -20,6 +20,27 @@ const PROJECT_NAME_BY_CODE = {
   "9010": "GR10X (other)",
   "1500": "GR10X (other)"
 };
+const MATERIAL_SEARCH_SCOPE_ID = "materialSearchScope";
+const HARDWARE_SEARCH_SCOPE_ID = "hardwareSearchScope";
+const MATERIAL_SEARCH_FIELDS = {
+  part_number: part => part.part_number,
+  part_name: part => part.part_name,
+  description: part => part.description,
+  main_category: part => part.main_category,
+  sub_category: part => part.sub_category,
+  project: part => getProjectName(part.project_code),
+  project_code: part => part.project_code,
+  revision: part => part.revision_code,
+  source: part => part.source,
+  checked_by: part => part.checked_by
+};
+const HARDWARE_SEARCH_FIELDS = {
+  group: row => row.group_name,
+  serial: row => row.serial_no,
+  name: row => row.part_name,
+  specification: row => row.specification,
+  excel_row: row => row.excel_row
+};
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -394,6 +415,7 @@ function getFilteredParts() {
   const main = elements.mainFilter.value;
   const sub = elements.subFilter.value;
   const revisionMode = elements.revisionModeFilter.value;
+  const searchFields = getActiveSearchFields(MATERIAL_SEARCH_SCOPE_ID, MATERIAL_SEARCH_FIELDS);
 
   return state.parts.filter(part => {
     if (projectName && getProjectName(part.project_code) !== projectName) return false;
@@ -402,35 +424,18 @@ function getFilteredParts() {
     if (sub && part.sub_category !== sub) return false;
     if (revisionMode && part.revision_mode !== revisionMode) return false;
     if (!search) return true;
-    const haystack = normalizeSearch([
-      part.part_number,
-      part.part_name,
-      part.description,
-      part.main_category,
-      part.sub_category,
-      getProjectName(part.project_code),
-      part.project_code,
-      part.revision_code,
-      part.source,
-      part.checked_by
-    ].join(" "));
-    return haystack.includes(search);
+    return matchesScopedSearch(part, search, searchFields, MATERIAL_SEARCH_FIELDS);
   });
 }
 
 function getFilteredHardware() {
   const search = normalizeSearch(elements.hardwareSearchInput.value);
   const group = elements.hardwareGroupFilter.value;
+  const searchFields = getActiveSearchFields(HARDWARE_SEARCH_SCOPE_ID, HARDWARE_SEARCH_FIELDS);
   return state.hardware.filter(row => {
     if (group && row.group_name !== group) return false;
     if (!search) return true;
-    const haystack = normalizeSearch([
-      row.group_name,
-      row.serial_no,
-      row.part_name,
-      row.specification
-    ].join(" "));
-    return haystack.includes(search);
+    return matchesScopedSearch(row, search, searchFields, HARDWARE_SEARCH_FIELDS);
   });
 }
 
@@ -441,13 +446,29 @@ function clearMaterialFilters() {
   elements.mainFilter.value = "";
   elements.subFilter.value = "";
   elements.revisionModeFilter.value = "";
+  window.XeraSearchScopes?.clear(MATERIAL_SEARCH_SCOPE_ID);
   renderParts();
 }
 
 function clearHardwareFilters() {
   elements.hardwareSearchInput.value = "";
   elements.hardwareGroupFilter.value = "";
+  window.XeraSearchScopes?.clear(HARDWARE_SEARCH_SCOPE_ID);
   renderHardware();
+}
+
+function getActiveSearchFields(scopeId, searchFieldMap) {
+  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
+  const validSelected = selected.filter(field => searchFieldMap[field]);
+  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
+}
+
+function matchesScopedSearch(record, search, searchFields, searchFieldMap) {
+  return searchFields.some(field => normalizeSearch(flattenSearchValue(searchFieldMap[field](record))).includes(search));
+}
+
+function flattenSearchValue(value) {
+  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
 }
 
 async function apiGet(path) {

@@ -48,10 +48,29 @@
       </div>
 
       <form class="filter-form" id="filterForm">
-        <label class="field">
+        <div class="field search-field">
           <span>Search</span>
-          <input id="searchInput" autocomplete="off" placeholder="Document no, filename, product, document name">
-        </label>
+          <div class="search-field-control">
+            <input id="searchInput" autocomplete="off" placeholder="Document no, filename, product, document name">
+            <details class="search-scope" id="documentSearchScope" data-search-scope>
+              <summary><span data-search-scope-label>All fields</span></summary>
+              <div class="search-scope-menu" aria-label="Search document fields">
+                <label class="search-scope-option"><input type="checkbox" value="document_no" data-search-scope-option data-label="Document No">Document No</label>
+                <label class="search-scope-option"><input type="checkbox" value="category" data-search-scope-option data-label="Category">Category</label>
+                <label class="search-scope-option"><input type="checkbox" value="year" data-search-scope-option data-label="Year">Year</label>
+                <label class="search-scope-option"><input type="checkbox" value="revision" data-search-scope-option data-label="Revision">Revision</label>
+                <label class="search-scope-option"><input type="checkbox" value="filename" data-search-scope-option data-label="Filename">Filename</label>
+                <label class="search-scope-option"><input type="checkbox" value="document_name" data-search-scope-option data-label="Document Name">Document Name</label>
+                <label class="search-scope-option"><input type="checkbox" value="reference" data-search-scope-option data-label="Reference">Reference</label>
+                <label class="search-scope-option"><input type="checkbox" value="written_by" data-search-scope-option data-label="Written By">Written By</label>
+                <label class="search-scope-option"><input type="checkbox" value="creation_date" data-search-scope-option data-label="Creation Date">Creation Date</label>
+                <label class="search-scope-option"><input type="checkbox" value="checked_by" data-search-scope-option data-label="Checked By">Checked By</label>
+                <label class="search-scope-option"><input type="checkbox" value="reviewed_at" data-search-scope-option data-label="Reviewed At">Reviewed At</label>
+                <label class="search-scope-option"><input type="checkbox" value="revision_updated" data-search-scope-option data-label="Revision Updated">Revision Updated</label>
+              </div>
+            </details>
+          </div>
+        </div>
 
         <label class="field">
           <span>Category</span>

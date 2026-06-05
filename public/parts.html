@@ -56,10 +56,27 @@
       </div>
 
       <form class="filter-form parts-filter-form" id="materialFilterForm">
-        <label class="field">
+        <div class="field search-field">
           <span>Search</span>
-          <input id="searchInput" autocomplete="off" placeholder="Part number, name, description, category">
-        </label>
+          <div class="search-field-control">
+            <input id="searchInput" autocomplete="off" placeholder="Part number, name, description, category">
+            <details class="search-scope" id="materialSearchScope" data-search-scope>
+              <summary><span data-search-scope-label>All fields</span></summary>
+              <div class="search-scope-menu" aria-label="Search material fields">
+                <label class="search-scope-option"><input type="checkbox" value="part_number" data-search-scope-option data-label="Part Number">Part Number</label>
+                <label class="search-scope-option"><input type="checkbox" value="part_name" data-search-scope-option data-label="Part Name">Part Name</label>
+                <label class="search-scope-option"><input type="checkbox" value="description" data-search-scope-option data-label="Description">Description</label>
+                <label class="search-scope-option"><input type="checkbox" value="main_category" data-search-scope-option data-label="Main Category">Main Category</label>
+                <label class="search-scope-option"><input type="checkbox" value="sub_category" data-search-scope-option data-label="Sub Category">Sub Category</label>
+                <label class="search-scope-option"><input type="checkbox" value="project" data-search-scope-option data-label="Project">Project</label>
+                <label class="search-scope-option"><input type="checkbox" value="project_code" data-search-scope-option data-label="Project Code">Project Code</label>
+                <label class="search-scope-option"><input type="checkbox" value="revision" data-search-scope-option data-label="Revision">Revision</label>
+                <label class="search-scope-option"><input type="checkbox" value="source" data-search-scope-option data-label="Source">Source</label>
+                <label class="search-scope-option"><input type="checkbox" value="checked_by" data-search-scope-option data-label="Checked By">Checked By</label>
+              </div>
+            </details>
+          </div>
+        </div>
         <label class="field">
           <span>Project</span>
           <select id="projectNameFilter"><option value="">All</option></select>
@@ -89,10 +106,22 @@
       </form>
 
       <form class="filter-form hardware-filter-form hidden" id="hardwareFilterForm">
-        <label class="field">
+        <div class="field search-field">
           <span>Search</span>
-          <input id="hardwareSearchInput" autocomplete="off" placeholder="Serial, name, specification">
-        </label>
+          <div class="search-field-control">
+            <input id="hardwareSearchInput" autocomplete="off" placeholder="Serial, name, specification">
+            <details class="search-scope" id="hardwareSearchScope" data-search-scope>
+              <summary><span data-search-scope-label>All fields</span></summary>
+              <div class="search-scope-menu" aria-label="Search hardware fields">
+                <label class="search-scope-option"><input type="checkbox" value="group" data-search-scope-option data-label="Group">Group</label>
+                <label class="search-scope-option"><input type="checkbox" value="serial" data-search-scope-option data-label="Serial">Serial</label>
+                <label class="search-scope-option"><input type="checkbox" value="name" data-search-scope-option data-label="Name">Name</label>
+                <label class="search-scope-option"><input type="checkbox" value="specification" data-search-scope-option data-label="Specification">Specification</label>
+                <label class="search-scope-option"><input type="checkbox" value="excel_row" data-search-scope-option data-label="Excel Row">Excel Row</label>
+              </div>
+            </details>
+          </div>
+        </div>
         <label class="field">
           <span>Group</span>
           <select id="hardwareGroupFilter"><option value="">All</option></select>
