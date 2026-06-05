@@ -1,0 +1,61 @@
+.materials-table {
+  min-width: max(1360px, 100%);
+}
+
+.hardware-reference-table {
+  min-width: max(1180px, 100%);
+}
+
+.parts-table th,
+.parts-table td {
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.parts-table td {
+  vertical-align: top;
+}
+
+.materials-table th:nth-child(1),
+.materials-table td:nth-child(1) {
+  width: 150px;
+}
+
+.materials-table th:nth-child(2),
+.materials-table td:nth-child(2) {
+  width: 320px;
+}
+
+.materials-table th:nth-child(3),
+.materials-table td:nth-child(3) {
+  width: 360px;
+}
+
+.materials-table th:nth-child(4),
+.materials-table td:nth-child(4) {
+  width: 260px;
+}
+
+.materials-table th:nth-child(5),
+.materials-table td:nth-child(5) {
+  width: 270px;
+}
+
+.parts-table .part-number-cell {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.parts-table .part-name-cell {
+  font-weight: 700;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.part-name-token {
+  display: inline-block;
+  white-space: nowrap;
+}
