@@ -287,11 +287,11 @@ function renderParts() {
 
   elements.partsBody.innerHTML = filtered.map(part => `
     <tr class="clickable-row" data-part-id="${part.id}">
-      <td class="mono-cell">${escapeHtml(part.part_number)}</td>
-      <td>${escapeHtml(normalizeDisplayText(part.part_name))}</td>
-      <td>${escapeHtml(normalizeDisplayText(part.description || "-"))}</td>
-      <td>${escapeHtml(normalizeDisplayText(part.main_category || "-"))}</td>
-      <td>${escapeHtml(normalizeDisplayText(part.sub_category || "-"))}</td>
+      <td class="part-number-cell mono-cell">${escapeHtml(part.part_number)}</td>
+      <td class="part-name-cell">${formatPartName(part.part_name)}</td>
+      <td class="part-description-cell">${escapeHtml(normalizeDisplayText(part.description || "-"))}</td>
+      <td class="part-category-cell">${escapeHtml(normalizeDisplayText(part.main_category || "-"))}</td>
+      <td class="part-category-cell">${escapeHtml(normalizeDisplayText(part.sub_category || "-"))}</td>
     </tr>
   `).join("");
 }
@@ -515,18 +515,36 @@ function normalizeSearch(value) {
 
 function normalizeDisplayText(value) {
   return String(value ?? "")
-    .replaceAll("İ", "I")
-    .replaceAll("ı", "i")
-    .replaceAll("Ğ", "G")
-    .replaceAll("ğ", "g")
-    .replaceAll("Ü", "U")
-    .replaceAll("ü", "u")
-    .replaceAll("Ş", "S")
-    .replaceAll("ş", "s")
-    .replaceAll("Ö", "O")
-    .replaceAll("ö", "o")
-    .replaceAll("Ç", "C")
-    .replaceAll("ç", "c");
+    .replaceAll("Ä°", "I")
+    .replaceAll("Ä±", "i")
+    .replaceAll("Ä", "G")
+    .replaceAll("ÄŸ", "g")
+    .replaceAll("Ãœ", "U")
+    .replaceAll("Ã¼", "u")
+    .replaceAll("Å", "S")
+    .replaceAll("ÅŸ", "s")
+    .replaceAll("Ã–", "O")
+    .replaceAll("Ã¶", "o")
+    .replaceAll("Ã‡", "C")
+    .replaceAll("Ã§", "c");
+}
+
+function formatPartName(value) {
+  return normalizeDisplayText(value)
+    .split(/(\s+)/)
+    .map(part => {
+      if (!part) return "";
+      if (/^\s+$/.test(part)) return escapeHtml(part);
+
+      return part
+        .split("_")
+        .map((segment, index, segments) => {
+          const suffix = index < segments.length - 1 ? "_" : "";
+          return `<span class="part-name-token" style="display:inline-block;white-space:nowrap">${escapeHtml(segment + suffix)}</span>`;
+        })
+        .join("");
+    })
+    .join("");
 }
 
 function escapeHtml(value) {
