@@ -143,7 +143,7 @@ function collectFormData() {
   return {
     project_code: elements.projectCode.value,
     main_code: elements.mainCode.value,
-    part_number: state.partNumberTouched ? elements.partNumber.value.trim() : "",
+    part_number: elements.partNumber.value.trim(),
     revision_mode: elements.revisionMode.value,
     revision_code: elements.revisionCode.value,
     part_name: elements.partName.value,
