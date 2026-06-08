@@ -52,6 +52,7 @@ const elements = {
   notificationDocumentName: document.getElementById("notificationDocumentName"),
   notificationReferenceField: document.getElementById("notificationReferenceField"),
   notificationReferenceValue: document.getElementById("notificationReferenceValue"),
+  notificationPartNumber: document.getElementById("notificationPartNumber"),
   notificationPartName: document.getElementById("notificationPartName"),
   notificationDescription: document.getElementById("notificationDescription"),
   notificationMainCategory: document.getElementById("notificationMainCategory"),
@@ -186,6 +187,16 @@ async function handleNotificationAction(event) {
       return;
     }
 
+    if (action === "notification-reject") {
+      const reason = window.prompt("Reject reason", "Part code request is not accepted.");
+      if (reason === null) {
+        button.disabled = false;
+        return;
+      }
+      const result = await apiPost(`/api/admin/notifications/${notificationId}/reject`, { reason });
+      showMessage(`${getNotificationItemLabel(notification, result)} rejected.`, "success");
+    }
+
     await refreshAll();
   } catch (error) {
     showMessage(error.message, "error");
@@ -308,12 +319,15 @@ function renderNotifications(notifications) {
 
   elements.notificationBody.innerHTML = notifications.map(notification => {
     const metadata = parseMetadata(notification);
+    const domain = getNotificationDomain(notification, metadata);
+    const approveLabel = metadata.action === "edit_request" ? "Approve" : "OK";
     return `
       <tr>
         <td>
           <div class="action-row">
-            <button class="compact-btn approve-btn" type="button" data-action="notification-okay" data-id="${notification.id}">OK</button>
+            <button class="compact-btn approve-btn" type="button" data-action="notification-okay" data-id="${notification.id}">${approveLabel}</button>
             <button class="compact-btn secondary-btn" type="button" data-action="notification-edit" data-id="${notification.id}">Edit</button>
+            ${domain === "part" ? `<button class="compact-btn reject-btn" type="button" data-action="notification-reject" data-id="${notification.id}">Reject</button>` : ""}
           </div>
         </td>
         <td>${escapeHtml(formatNotificationType(notification))}</td>
@@ -461,6 +475,7 @@ function openNotificationEditModal(notification) {
     elements.notificationReferenceValue.value = metadata.reference_value || "";
     elements.notificationReferenceField.classList.toggle("hidden", !canEditNotificationReference(metadata.category));
   } else {
+    elements.notificationPartNumber.value = metadata.part_number || "";
     elements.notificationPartName.value = metadata.part_name || "";
     elements.notificationDescription.value = metadata.description || "";
     elements.notificationMainCategory.value = metadata.main_category || "";
@@ -518,14 +533,16 @@ function collectNotificationEditBody(notification) {
   }
 
   const partName = elements.notificationPartName.value.trim();
+  const partNumber = elements.notificationPartNumber.value.trim();
   const description = elements.notificationDescription.value.trim();
   const mainCategory = elements.notificationMainCategory.value.trim();
   const subCategory = elements.notificationSubCategory.value.trim();
-  if (!partName || !description || !mainCategory) {
-    showNotificationEditMessage("Part name, description and main category are required.", "error");
+  if (!partNumber || !partName || !description || !mainCategory) {
+    showNotificationEditMessage("Part number, part name, description and main category are required.", "error");
     return null;
   }
   return {
+    part_number: partNumber,
     part_name: partName,
     description,
     main_category: mainCategory,
@@ -561,6 +578,7 @@ function parseMetadata(notification) {
 function formatNotificationType(notification) {
   const metadata = parseMetadata(notification);
   if (metadata.domain === "document" || notification.type === "document_auto_published") return "Document";
+  if (notification.type === "part_edit_request" || metadata.action === "edit_request") return "Part Edit";
   if (metadata.domain === "part" || notification.type === "part_auto_published") return "Part";
   return notification.type || "-";
 }

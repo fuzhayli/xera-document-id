@@ -277,6 +277,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, result);
     }
 
+    const editPartMatch = url.pathname.match(/^\/api\/parts\/(\d+)\/edit$/);
+    if (req.method === "POST" && editPartMatch) {
+      const user = await resolveUser(req);
+      const partId = Number(editPartMatch[1]);
+      const body = await readJson(req);
+      const result = await editPartRecordByRequester(partId, user, body);
+      return sendJson(res, result.status === "pending_review" ? 202 : 200, result);
+    }
+
+    const adminEditPartMatch = url.pathname.match(/^\/api\/admin\/parts\/(\d+)\/edit$/);
+    if (req.method === "POST" && adminEditPartMatch) {
+      const user = await requirePermission(req, "part_admin");
+      const partId = Number(adminEditPartMatch[1]);
+      const body = await readJson(req);
+      const result = await adminEditPartRecord(partId, user, body);
+      return sendJson(res, 200, result);
+    }
+
     const deletePartMatch = url.pathname.match(/^\/api\/admin\/parts\/(\d+)\/delete$/);
     if (req.method === "POST" && deletePartMatch) {
       const user = await requirePermission(req, "part_admin");
@@ -533,6 +551,15 @@ const server = http.createServer(async (req, res) => {
       const notificationId = Number(adminEditNotificationMatch[1]);
       const body = await readJson(req);
       const result = await adminEditNotification(notificationId, user, body);
+      return sendJson(res, 200, result);
+    }
+
+    const adminRejectNotificationMatch = url.pathname.match(/^\/api\/admin\/notifications\/(\d+)\/reject$/);
+    if (req.method === "POST" && adminRejectNotificationMatch) {
+      const user = await requireAnyAdmin(req);
+      const notificationId = Number(adminRejectNotificationMatch[1]);
+      const body = await readJson(req);
+      const result = await adminRejectNotification(notificationId, user, body.reason || "");
       return sendJson(res, 200, result);
     }
 
@@ -1760,6 +1787,424 @@ async function rejectPartRevisionRequest(requestId, user, reason) {
   return { revision_request: after };
 }
 
+async function adminEditPartRecord(partId, user, body = {}) {
+  const result = await updatePartRecordDetails(partId, user, body, {
+    reviewedByAdmin: true,
+    auditAction: "part.admin_edited"
+  });
+  return { status: "updated", part: result.part };
+}
+
+async function editPartRecordByRequester(partId, user, body = {}) {
+  const before = await getPartRecordById(partId);
+  if (!before) throw httpError(404, "not_found", "Part record not found.");
+  if (Number(before.requested_by_user_id) !== Number(user.id)) {
+    throw httpError(403, "forbidden", "Only the original requester can edit this part.");
+  }
+
+  const systemUser = await getSystemUser();
+  if (Number(before.approved_by_user_id) === Number(systemUser.id)) {
+    const result = await updatePartRecordDetails(partId, user, body, {
+      reviewedByAdmin: false,
+      auditAction: "part.user_auto_edited"
+    });
+    await refreshOpenPartAutoPublishedNotifications(result.part, user);
+    return { status: "updated", part: result.part };
+  }
+
+  const pending = await getPendingPartEditNotificationForPart(partId);
+  if (pending) {
+    throw httpError(409, "edit_request_exists", "There is already a pending edit request for this part.");
+  }
+
+  const proposed = normalizePartRecordEditInput(before, body);
+  await validatePartRecordEditInput(proposed, {
+    ignorePartId: before.id,
+    ignoreRequestId: before.request_id || null
+  });
+  await notifyAdminsOfPartEditRequest(before, proposed, user);
+  return { status: "pending_review", part: before };
+}
+
+async function updatePartRecordDetails(partId, user, body = {}, options = {}) {
+  const before = await getPartRecordById(partId);
+  if (!before) throw httpError(404, "not_found", "Part record not found.");
+  const request = before.request_id ? await getPartRequestById(before.request_id) : null;
+  const next = normalizePartRecordEditInput(before, body);
+
+  await validatePartRecordEditInput(next, {
+    ignorePartId: before.id,
+    ignoreRequestId: request ? request.id : null
+  });
+
+  const now = nowIso();
+  const approvedByUserId = options.reviewedByAdmin ? user.id : before.approved_by_user_id;
+  const approvedAt = options.reviewedByAdmin ? now : before.approved_at;
+
+  await db.prepare(`
+    UPDATE part_records
+    SET project_code = ?,
+        main_code = ?,
+        sequence_no = ?,
+        part_number = ?,
+        revision_code = ?,
+        revision_mode = ?,
+        part_name = ?,
+        description = ?,
+        main_category = ?,
+        sub_category = ?,
+        approved_by_user_id = ?,
+        approved_at = ?
+    WHERE id = ?
+      AND deleted_at IS NULL
+  `).run(
+    next.project_code,
+    next.main_code,
+    next.sequence_no,
+    next.part_number,
+    next.revision_code,
+    next.revision_mode,
+    next.part_name,
+    next.description,
+    next.main_category,
+    next.sub_category,
+    approvedByUserId,
+    approvedAt,
+    before.id
+  );
+
+  if (request) {
+    const payload = {
+      ...(safeParseJson(request.payload_json) || {}),
+      project_code: next.project_code,
+      main_code: next.main_code,
+      sequence_no: next.sequence_no,
+      part_number: next.part_number,
+      revision_code: next.revision_code,
+      revision_mode: next.revision_mode,
+      part_name: next.part_name,
+      description: next.description,
+      main_category: next.main_category,
+      sub_category: next.sub_category
+    };
+
+    await db.prepare(`
+      UPDATE part_requests
+      SET project_code = ?,
+          main_code = ?,
+          sequence_no = ?,
+          part_number = ?,
+          revision_code = ?,
+          revision_mode = ?,
+          part_name = ?,
+          description = ?,
+          main_category = ?,
+          sub_category = ?,
+          approved_by_user_id = ?,
+          approved_at = ?,
+          payload_json = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      next.project_code,
+      next.main_code,
+      next.sequence_no,
+      next.part_number,
+      next.revision_code,
+      next.revision_mode,
+      next.part_name,
+      next.description,
+      next.main_category,
+      next.sub_category,
+      approvedByUserId,
+      approvedAt,
+      JSON.stringify(payload),
+      now,
+      request.id
+    );
+  }
+
+  await touchPartSequence(next.project_code, next.main_code, next.sequence_no);
+  const after = await getPartRecordById(before.id);
+  await insertAudit(user.id, "part_record", before.id, options.auditAction || "part.edited", before, after);
+  return { domain: "part", part: after, requesterId: after.requested_by_user_id || before.requested_by_user_id };
+}
+
+function normalizePartRecordEditInput(before, body = {}) {
+  const hasPartNumber = hasOwn(body, "part_number") || hasOwn(body, "partNumber");
+  let partNumber = hasPartNumber
+    ? sanitizePartNumber(body.part_number ?? body.partNumber)
+    : sanitizePartNumber(before.part_number);
+  let parsed = hasPartNumber ? parsePartNumberComponents(partNumber) : {};
+
+  const projectCode = parsed.project_code || (hasOwn(body, "project_code") || hasOwn(body, "projectCode")
+    ? sanitizeCompact(body.project_code ?? body.projectCode)
+    : sanitizeCompact(before.project_code));
+  const mainCode = parsed.main_code || (hasOwn(body, "main_code") || hasOwn(body, "mainCode")
+    ? sanitizeCompact(body.main_code ?? body.mainCode).replace(/[^1-9]/g, "").slice(0, 1)
+    : sanitizeCompact(before.main_code).replace(/[^1-9]/g, "").slice(0, 1));
+  const sequenceNo = parsed.sequence_no || (hasOwn(body, "sequence_no") || hasOwn(body, "sequenceNo")
+    ? sanitizePartSequenceNo(body.sequence_no ?? body.sequenceNo)
+    : sanitizePartSequenceNo(before.sequence_no));
+  const revisionCode = parsed.revision_code || (hasOwn(body, "revision_code") || hasOwn(body, "revisionCode")
+    ? sanitizeCompact(body.revision_code ?? body.revisionCode)
+    : sanitizeCompact(before.revision_code));
+  const revisionMode = parsed.revision_mode || normalizePartRevisionMode(
+    body.revision_mode ?? body.revisionMode ?? inferPartRevisionMode(revisionCode) ?? before.revision_mode
+  );
+
+  if (!hasPartNumber && projectCode && mainCode && sequenceNo && revisionCode) {
+    partNumber = buildPartNumber({
+      project_code: projectCode,
+      main_code: mainCode,
+      revision_code: revisionCode
+    }, sequenceNo);
+    parsed = parsePartNumberComponents(partNumber);
+  }
+
+  const mainCategoryFallback = mainCode && PART_MAIN_CODE_MAP[mainCode]
+    ? PART_MAIN_CODE_MAP[mainCode].name
+    : before.main_category;
+
+  return {
+    project_code: projectCode,
+    main_code: mainCode,
+    sequence_no: sequenceNo,
+    part_number: partNumber,
+    revision_code: revisionCode,
+    revision_mode: revisionMode,
+    part_name: hasOwn(body, "part_name") || hasOwn(body, "partName")
+      ? sanitizePartName(body.part_name ?? body.partName)
+      : sanitizePartName(before.part_name),
+    description: hasOwn(body, "description") || hasOwn(body, "part_description") || hasOwn(body, "partDescription")
+      ? sanitizePartDescription(body.description ?? body.part_description ?? body.partDescription)
+      : sanitizePartDescription(before.description),
+    main_category: hasOwn(body, "main_category") || hasOwn(body, "mainCategory")
+      ? sanitizePartDescription(body.main_category ?? body.mainCategory)
+      : sanitizePartDescription(mainCategoryFallback),
+    sub_category: hasOwn(body, "sub_category") || hasOwn(body, "subCategory")
+      ? sanitizePartDescription(body.sub_category ?? body.subCategory)
+      : sanitizePartDescription(before.sub_category),
+    parsed_part_number: parsed
+  };
+}
+
+async function validatePartRecordEditInput(input, options = {}) {
+  const errors = [];
+  const parsed = parsePartNumberComponents(input.part_number);
+  const modeRule = PART_REVISION_MODE_MAP[input.revision_mode];
+
+  if (!parsed.project_code) errors.push("Part number must look like X101-2001-01A.");
+  if (!input.project_code) errors.push("Project code is required.");
+  if (!input.main_code) errors.push("Main code is required.");
+  if (!input.sequence_no) errors.push("Sequence number is required.");
+  if (!input.revision_code) errors.push("Revision code is required.");
+  if (!modeRule) errors.push("Revision mode must be released, design or change.");
+  if (modeRule && !(new RegExp(modeRule.pattern)).test(input.revision_code)) {
+    errors.push(`Revision code must look like ${modeRule.example}.`);
+  }
+  if (!input.part_name || !/^[A-Z0-9_]+$/.test(input.part_name)) {
+    errors.push("Part name must use uppercase letters, numbers and underscores.");
+  }
+  if (!input.description) errors.push("Description is required.");
+  if (!input.main_category) errors.push("Main category is required.");
+
+  if (parsed.project_code && parsed.project_code !== input.project_code) {
+    errors.push("Part number project code and Project Code must match.");
+  }
+  if (parsed.main_code && parsed.main_code !== input.main_code) {
+    errors.push("Part number main code and Main Code must match.");
+  }
+  if (parsed.sequence_no && parsed.sequence_no !== input.sequence_no) {
+    errors.push("Part number sequence and Sequence must match.");
+  }
+  if (parsed.revision_code && parsed.revision_code !== input.revision_code) {
+    errors.push("Part number revision and Revision Code must match.");
+  }
+  if (parsed.revision_mode && parsed.revision_mode !== input.revision_mode) {
+    errors.push("Part number revision type and Revision Mode must match.");
+  }
+
+  if (input.project_code && input.main_code && input.sequence_no) {
+    const minimumSequence = getPartSequenceMinimum(input.project_code, input.main_code);
+    if (Number(input.sequence_no) < minimumSequence) {
+      errors.push(`${input.project_code}-${input.main_code} part numbers must start from ${padSequence(minimumSequence)}.`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw httpError(422, "validation_failed", errors.join(" "));
+  }
+
+  if (await isPartNumberUnavailableForEdit(input.part_number, options)) {
+    throw httpError(409, "duplicate_part_number", `${input.part_number} is already approved or reserved.`);
+  }
+  if (await isPartNameUnavailableForEdit(input.part_name, options)) {
+    throw httpError(409, "duplicate_part_name", `${input.part_name} is already used by another part.`);
+  }
+}
+
+function sanitizePartSequenceNo(value) {
+  const sequence = String(value ?? "").replace(/\D/g, "");
+  if (!/^\d{1,3}$/.test(sequence)) return "";
+  return padSequence(Number(sequence));
+}
+
+async function isPartNumberUnavailableForEdit(partNumber, options = {}) {
+  if (!partNumber) return false;
+  const record = await db.prepare(`
+    SELECT id
+    FROM part_records
+    WHERE part_number = ?
+      AND deleted_at IS NULL
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(partNumber, options.ignorePartId || null, options.ignorePartId || null);
+  if (record) return true;
+
+  const request = await db.prepare(`
+    SELECT id
+    FROM part_requests
+    WHERE part_number = ?
+      AND status <> 'rejected'
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(partNumber, options.ignoreRequestId || null, options.ignoreRequestId || null);
+  if (request) return true;
+
+  return await isPartRevisionNumberPending(partNumber, options.ignorePartRevisionRequestId || null);
+}
+
+async function isPartNameUnavailableForEdit(partName, options = {}) {
+  if (!partName) return false;
+  const record = await db.prepare(`
+    SELECT id
+    FROM part_records
+    WHERE UPPER(part_name) = ?
+      AND deleted_at IS NULL
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(partName, options.ignorePartId || null, options.ignorePartId || null);
+  if (record) return true;
+
+  const request = await db.prepare(`
+    SELECT id
+    FROM part_requests
+    WHERE UPPER(part_name) = ?
+      AND status <> 'rejected'
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(partName, options.ignoreRequestId || null, options.ignoreRequestId || null);
+  return Boolean(request);
+}
+
+async function touchPartSequence(projectCode, mainCode, sequenceNo) {
+  if (!projectCode || !mainCode || !sequenceNo) return;
+  const scopeKey = `${projectCode}:${mainCode}`;
+  const next = Number(sequenceNo) + 1;
+  const existing = await db.prepare("SELECT next_sequence FROM part_sequences WHERE scope_key = ?").get(scopeKey);
+  if (existing) {
+    if (Number(existing.next_sequence || 1) < next) {
+      await db.prepare(`
+        UPDATE part_sequences
+        SET next_sequence = ?,
+            updated_at = ?
+        WHERE scope_key = ?
+      `).run(next, nowIso(), scopeKey);
+    }
+    return;
+  }
+
+  await db.prepare(`
+    INSERT INTO part_sequences (scope_key, project_code, main_code, next_sequence, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(scopeKey, projectCode, mainCode, next, nowIso());
+}
+
+async function getPendingPartEditNotificationForPart(partId) {
+  return await db.prepare(`
+    SELECT *
+    FROM notifications
+    WHERE type = 'part_edit_request'
+      AND entity_type = 'part_record'
+      AND entity_id = ?
+      AND status IN ('unread', 'read')
+    LIMIT 1
+  `).get(partId);
+}
+
+async function notifyAdminsOfPartEditRequest(before, proposed, requester) {
+  const admins = await listUsersWithPermission("part_admin");
+  const label = before.part_number;
+  for (const admin of admins) {
+    await createNotification({
+      recipientUserId: admin.id,
+      sourceUserId: requester.id,
+      type: "part_edit_request",
+      entityType: "part_record",
+      entityId: before.id,
+      relatedRequestId: before.request_id,
+      title: "Part edit request",
+      body: `${requester.display_name} requested changes for ${label}.`,
+      metadata: {
+        domain: "part",
+        action: "edit_request",
+        label,
+        requested_by_user_id: requester.id,
+        created_by: requester.display_name,
+        previous_part_number: before.part_number,
+        previous_part_name: before.part_name,
+        previous_description: before.description,
+        previous_main_category: before.main_category,
+        previous_sub_category: before.sub_category,
+        part_number: proposed.part_number,
+        project_code: proposed.project_code,
+        main_code: proposed.main_code,
+        sequence_no: proposed.sequence_no,
+        revision_code: proposed.revision_code,
+        revision_mode: proposed.revision_mode,
+        part_name: proposed.part_name,
+        description: proposed.description,
+        main_category: proposed.main_category,
+        sub_category: proposed.sub_category
+      }
+    });
+  }
+}
+
+async function refreshOpenPartAutoPublishedNotifications(part, editor) {
+  const notifications = await db.prepare(`
+    SELECT *
+    FROM notifications
+    WHERE type = 'part_auto_published'
+      AND entity_type = 'part_record'
+      AND entity_id = ?
+      AND status IN ('unread', 'read')
+  `).all(part.id);
+
+  for (const notification of notifications) {
+    const metadata = safeParseJson(notification.metadata_json) || {};
+    metadata.label = part.part_number;
+    metadata.part_number = part.part_number;
+    metadata.part_name = part.part_name;
+    metadata.description = part.description;
+    metadata.main_category = part.main_category;
+    metadata.sub_category = part.sub_category;
+    metadata.edited_by = editor.display_name;
+
+    await db.prepare(`
+      UPDATE notifications
+      SET metadata_json = ?,
+          body = ?
+      WHERE id = ?
+    `).run(
+      JSON.stringify(metadata),
+      `${part.part_number} was edited by ${editor.display_name} and is available for review.`,
+      notification.id
+    );
+  }
+}
+
 async function listPartRecords(options = {}) {
   const pendingRevisionColumn = options.includePendingRevision
     ? `,
@@ -1772,7 +2217,16 @@ async function listPartRecords(options = {}) {
           AND source_pr.main_code = pr.main_code
           AND source_pr.sequence_no = pr.sequence_no
         LIMIT 1
-      ) AS pending_revision_request_id`
+      ) AS pending_revision_request_id,
+      (
+        SELECT n.id
+        FROM notifications n
+        WHERE n.type = 'part_edit_request'
+          AND n.entity_type = 'part_record'
+          AND n.entity_id = pr.id
+          AND n.status IN ('unread', 'read')
+        LIMIT 1
+      ) AS pending_edit_request_id`
     : "";
 
   const rows = await db.prepare(`
@@ -3392,7 +3846,7 @@ async function listAdminNotifications(user) {
     LEFT JOIN users au ON au.id = n.acted_by_user_id
     WHERE n.recipient_user_id = ?
       AND n.status IN ('unread', 'read')
-      AND n.type IN ('document_auto_published', 'part_auto_published')
+      AND n.type IN ('document_auto_published', 'part_auto_published', 'part_edit_request')
     ORDER BY n.created_at ASC, n.id ASC
     LIMIT 100
   `).all(user.id);
@@ -3439,6 +3893,26 @@ async function adminEditNotification(notificationId, user, body) {
 
     await completeRelatedReviewNotifications(notification, user);
     await notifyRequesterOfAdminReview(notification, user, result, "edit");
+    return {
+      notification: await getNotificationById(notificationId),
+      ...notificationResultPayload(result)
+    };
+  });
+}
+
+async function adminRejectNotification(notificationId, user, reason) {
+  return await db.transaction(async () => {
+    const notification = await getAdminReviewNotification(notificationId, user);
+    if (notification.entity_type !== "part_record") {
+      throw httpError(422, "unsupported_notification", "Only part review notifications can be rejected here.");
+    }
+
+    const result = notification.type === "part_auto_published"
+      ? await rejectAutoPublishedPartNotification(notification, user, reason)
+      : await rejectPartEditNotification(notification, user, reason);
+
+    await completeRelatedReviewNotifications(notification, user);
+    await notifyRequesterOfAdminReview(notification, user, result, "reject");
     return {
       notification: await getNotificationById(notificationId),
       ...notificationResultPayload(result)
@@ -3498,6 +3972,10 @@ async function markDocumentNotificationOkay(notification, user) {
 }
 
 async function markPartNotificationOkay(notification, user) {
+  if (notification.type === "part_edit_request") {
+    return await applyPartEditNotification(notification, user, null, "part.edit_request.approved");
+  }
+
   const before = await getPartRecordById(notification.entity_id);
   if (!before) throw httpError(404, "not_found", "Part record not found.");
   const request = before.request_id ? await getPartRequestById(before.request_id) : null;
@@ -3608,74 +4086,110 @@ async function editDocumentFromNotification(notification, user, body) {
 }
 
 async function editPartFromNotification(notification, user, body) {
+  return await applyPartEditNotification(notification, user, body, "part.notification_edited");
+}
+
+async function applyPartEditNotification(notification, user, body = null, auditAction = "part.notification_edited") {
+  const metadata = safeParseJson(notification.metadata_json) || {};
+  const editBody = body || {
+    project_code: metadata.project_code,
+    main_code: metadata.main_code,
+    sequence_no: metadata.sequence_no,
+    part_number: metadata.part_number,
+    revision_code: metadata.revision_code,
+    revision_mode: metadata.revision_mode,
+    part_name: metadata.part_name,
+    description: metadata.description,
+    main_category: metadata.main_category,
+    sub_category: metadata.sub_category
+  };
+
+  const result = await updatePartRecordDetails(notification.entity_id, user, editBody, {
+    reviewedByAdmin: true,
+    auditAction
+  });
+
+  return {
+    ...result,
+    requesterId: metadata.requested_by_user_id || result.requesterId || notification.source_user_id
+  };
+}
+
+async function rejectAutoPublishedPartNotification(notification, user, reason) {
   const before = await getPartRecordById(notification.entity_id);
   if (!before) throw httpError(404, "not_found", "Part record not found.");
   const request = before.request_id ? await getPartRequestById(before.request_id) : null;
-
-  const nextPartName = (hasOwn(body, "part_name") || hasOwn(body, "partName"))
-    ? sanitizePartName(body.part_name ?? body.partName)
-    : before.part_name;
-  const nextDescription = (hasOwn(body, "description") || hasOwn(body, "part_description") || hasOwn(body, "partDescription"))
-    ? sanitizePartDescription(body.description ?? body.part_description ?? body.partDescription)
-    : before.description;
-  const nextMainCategory = (hasOwn(body, "main_category") || hasOwn(body, "mainCategory"))
-    ? sanitizePartDescription(body.main_category ?? body.mainCategory)
-    : before.main_category;
-  const nextSubCategory = (hasOwn(body, "sub_category") || hasOwn(body, "subCategory"))
-    ? sanitizePartDescription(body.sub_category ?? body.subCategory)
-    : before.sub_category;
-
-  if (!nextPartName || !/^[A-Z0-9_]+$/.test(nextPartName)) {
-    throw httpError(422, "validation_failed", "Part name must use uppercase letters, numbers and underscores.");
-  }
-  if (!nextDescription) throw httpError(422, "validation_failed", "Description is required.");
-  if (!nextMainCategory) throw httpError(422, "validation_failed", "Main category is required.");
-
   const now = nowIso();
+  const cleanReason = sanitizePartDescription(reason || "Rejected by Part List Admin.");
+
+  await db.prepare(`
+    UPDATE part_revision_requests
+    SET status = 'rejected',
+        reject_reason = 'Source part was rejected.',
+        decided_by_user_id = ?,
+        decided_at = ?,
+        updated_at = ?
+    WHERE part_record_id = ?
+      AND status = 'pending'
+  `).run(user.id, now, now, before.id);
+
   await db.prepare(`
     UPDATE part_records
-    SET part_name = ?,
-        description = ?,
-        main_category = ?,
-        sub_category = ?,
-        approved_by_user_id = ?,
-        approved_at = ?
+    SET deleted_at = ?,
+        deleted_by_user_id = ?
     WHERE id = ?
-  `).run(nextPartName, nextDescription, nextMainCategory, nextSubCategory, user.id, now, before.id);
+      AND deleted_at IS NULL
+  `).run(now, user.id, before.id);
 
   if (request) {
-    const payload = safeParseJson(request.payload_json) || {};
-    payload.part_name = nextPartName;
-    payload.description = nextDescription;
-    payload.main_category = nextMainCategory;
-    payload.sub_category = nextSubCategory;
     await db.prepare(`
       UPDATE part_requests
-      SET part_name = ?,
-          description = ?,
-          main_category = ?,
-          sub_category = ?,
+      SET status = 'rejected',
+          reject_reason = ?,
           approved_by_user_id = ?,
           approved_at = ?,
-          payload_json = ?,
           updated_at = ?
       WHERE id = ?
-    `).run(
-      nextPartName,
-      nextDescription,
-      nextMainCategory,
-      nextSubCategory,
-      user.id,
-      now,
-      JSON.stringify(payload),
-      now,
-      request.id
-    );
+    `).run(cleanReason, user.id, now, now, request.id);
   }
 
-  const after = await getPartRecordById(before.id);
-  await insertAudit(user.id, "part_record", before.id, "part.notification_edited", before, after);
-  return { domain: "part", part: after, requesterId: before.requested_by_user_id || notification.source_user_id };
+  const after = {
+    ...before,
+    deleted_at: now,
+    deleted_by_user_id: user.id,
+    deleted_by: user.display_name
+  };
+  await insertDeletedItem("part", before.id, before.part_number, before, user, now);
+  await insertAudit(user.id, "part_record", before.id, "part.notification_rejected", before, after);
+
+  return {
+    domain: "part",
+    part: before,
+    requesterId: request ? request.requested_by_user_id : before.requested_by_user_id || notification.source_user_id,
+    reason: cleanReason
+  };
+}
+
+async function rejectPartEditNotification(notification, user, reason) {
+  if (notification.type !== "part_edit_request") {
+    throw httpError(422, "unsupported_notification", "This part notification cannot be rejected.");
+  }
+  const part = await getPartRecordById(notification.entity_id);
+  if (!part) throw httpError(404, "not_found", "Part record not found.");
+  const metadata = safeParseJson(notification.metadata_json) || {};
+  const cleanReason = sanitizePartDescription(reason || "Rejected by Part List Admin.");
+
+  await insertAudit(user.id, "part_record", part.id, "part.edit_request.rejected", metadata, {
+    part_id: part.id,
+    reason: cleanReason
+  });
+
+  return {
+    domain: "part",
+    part,
+    requesterId: metadata.requested_by_user_id || notification.source_user_id || part.requested_by_user_id,
+    reason: cleanReason
+  };
 }
 
 async function notifyAdminsOfAutoPublished(domain, requester, request, record) {
@@ -3729,10 +4243,14 @@ async function notifyRequesterOfAdminReview(notification, admin, result, action)
     : result.part.part_number;
   const title = action === "edit"
     ? `${capitalize(result.domain)} reviewed with edits`
-    : `${capitalize(result.domain)} reviewed`;
+    : action === "reject"
+      ? `${capitalize(result.domain)} review rejected`
+      : `${capitalize(result.domain)} reviewed`;
   const body = action === "edit"
     ? `${admin.display_name} reviewed and edited ${label}.`
-    : `${admin.display_name} marked ${label} as OK.`;
+    : action === "reject"
+      ? `${admin.display_name} rejected ${label}.${result.reason ? ` Reason: ${result.reason}` : ""}`
+      : `${admin.display_name} marked ${label} as OK.`;
 
   await createNotification({
     recipientUserId: requesterId,
@@ -3747,7 +4265,8 @@ async function notifyRequesterOfAdminReview(notification, admin, result, action)
       domain: result.domain,
       label,
       admin: admin.display_name,
-      action
+      action,
+      reason: result.reason || ""
     }
   });
 }
@@ -3981,7 +4500,7 @@ async function getAdminTaskSummary(user) {
     FROM notifications
     WHERE recipient_user_id = ?
       AND status IN ('unread', 'read')
-      AND type IN ('document_auto_published', 'part_auto_published')
+      AND type IN ('document_auto_published', 'part_auto_published', 'part_edit_request')
   `).get(user.id)).count || 0);
 
   return {

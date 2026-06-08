@@ -81,6 +81,21 @@ const elements = {
   closePartActionBtn: document.getElementById("closePartActionBtn"),
   partActionTitle: document.getElementById("partActionTitle"),
   partActionMeta: document.getElementById("partActionMeta"),
+  partEditBtn: document.getElementById("partEditBtn"),
+  partEditForm: document.getElementById("partEditForm"),
+  partEditMessage: document.getElementById("partEditMessage"),
+  partEditProjectCode: document.getElementById("partEditProjectCode"),
+  partEditMainCode: document.getElementById("partEditMainCode"),
+  partEditSequenceNo: document.getElementById("partEditSequenceNo"),
+  partEditRevisionMode: document.getElementById("partEditRevisionMode"),
+  partEditRevisionCode: document.getElementById("partEditRevisionCode"),
+  partEditPartNumber: document.getElementById("partEditPartNumber"),
+  partEditPartName: document.getElementById("partEditPartName"),
+  partEditDescription: document.getElementById("partEditDescription"),
+  partEditMainCategory: document.getElementById("partEditMainCategory"),
+  partEditSubCategory: document.getElementById("partEditSubCategory"),
+  cancelPartEditBtn: document.getElementById("cancelPartEditBtn"),
+  savePartEditBtn: document.getElementById("savePartEditBtn"),
   partRevisionRequestBtn: document.getElementById("partRevisionRequestBtn"),
   partDeleteBtn: document.getElementById("partDeleteBtn"),
   partDeleteConfirm: document.getElementById("partDeleteConfirm"),
@@ -106,6 +121,15 @@ async function init() {
   elements.partRequestModalBackdrop.addEventListener("click", closePartRequestModal);
   elements.closePartActionBtn.addEventListener("click", closePartActionModal);
   elements.partActionBackdrop.addEventListener("click", closePartActionModal);
+  elements.partEditBtn.addEventListener("click", showPartEditForm);
+  elements.partEditForm.addEventListener("submit", submitPartEdit);
+  elements.cancelPartEditBtn.addEventListener("click", hidePartEditForm);
+  [
+    elements.partEditProjectCode,
+    elements.partEditMainCode,
+    elements.partEditSequenceNo,
+    elements.partEditRevisionCode
+  ].forEach(input => input.addEventListener("input", updatePartEditPartNumber));
   elements.partRevisionRequestBtn.addEventListener("click", submitSelectedPartRevisionRequest);
   elements.partDeleteBtn.addEventListener("click", showPartDeleteConfirm);
   elements.cancelPartDeleteBtn.addEventListener("click", hidePartDeleteConfirm);
@@ -307,10 +331,15 @@ async function handlePartAction(event) {
 function openPartActionModal(part) {
   state.selectedPart = part;
   hidePartDeleteConfirm();
+  hidePartEditForm();
   elements.partActionTitle.textContent = part.part_number || "Part Actions";
   elements.partActionMeta.textContent = normalizeDisplayText(part.part_name || part.description || "Choose an action for this part.");
 
   const canRevise = canRequestPartRevision(part);
+  const canEdit = canEditPart(part);
+  elements.partEditBtn.classList.toggle("hidden", !canEdit);
+  elements.partEditBtn.disabled = Boolean(part.pending_edit_request_id) && !Auth.hasPermission(state.currentUser, "part_admin");
+  elements.partEditBtn.textContent = elements.partEditBtn.disabled ? "Edit Pending" : "Edit";
   elements.partRevisionRequestBtn.classList.toggle("hidden", !canRevise);
   elements.partRevisionRequestBtn.disabled = Boolean(part.pending_revision_request_id);
   elements.partRevisionRequestBtn.textContent = part.pending_revision_request_id ? "Revision Pending" : "Revision Request";
@@ -327,6 +356,109 @@ function closePartActionModal() {
   document.body.classList.remove("modal-open");
   state.selectedPart = null;
   hidePartDeleteConfirm();
+  hidePartEditForm();
+}
+
+function canEditPart(part) {
+  if (Auth.hasPermission(state.currentUser, "part_admin")) return true;
+  if (!state.currentUser || !Auth.getToken()) return false;
+  if (part.source !== "request") return false;
+  return Number(part.requested_by_user_id) === Number(state.currentUser.id);
+}
+
+function showPartEditForm() {
+  const part = state.selectedPart;
+  if (!part) return;
+  hidePartDeleteConfirm();
+  hidePartEditMessage();
+  fillPartEditForm(part);
+  elements.partEditForm.classList.remove("hidden");
+}
+
+function hidePartEditForm() {
+  elements.partEditForm.classList.add("hidden");
+  elements.savePartEditBtn.disabled = false;
+  hidePartEditMessage();
+}
+
+function fillPartEditForm(part) {
+  const parsed = parsePartNumber(part.part_number);
+  elements.partEditProjectCode.value = part.project_code || parsed.projectCode || "";
+  elements.partEditMainCode.value = part.main_code || parsed.mainCode || "";
+  elements.partEditSequenceNo.value = part.sequence_no || parsed.sequenceNo || "";
+  elements.partEditRevisionMode.value = part.revision_mode || parsed.revisionMode || "released";
+  elements.partEditRevisionCode.value = part.revision_code || parsed.revisionCode || "";
+  elements.partEditPartName.value = normalizeDisplayText(part.part_name || "");
+  elements.partEditDescription.value = normalizeDisplayText(part.description || "");
+  elements.partEditMainCategory.value = normalizeDisplayText(part.main_category || "");
+  elements.partEditSubCategory.value = normalizeDisplayText(part.sub_category || "");
+  updatePartEditPartNumber();
+}
+
+function updatePartEditPartNumber() {
+  const projectCode = sanitizeCompactValue(elements.partEditProjectCode.value);
+  const mainCode = String(elements.partEditMainCode.value || "").replace(/[^1-9]/g, "").slice(0, 1);
+  const sequenceNo = sanitizeSequenceValue(elements.partEditSequenceNo.value);
+  const revisionCode = sanitizeCompactValue(elements.partEditRevisionCode.value);
+  elements.partEditPartNumber.value = projectCode && mainCode && sequenceNo && revisionCode
+    ? `${projectCode}-${mainCode}${sequenceNo}-${revisionCode}`
+    : "";
+}
+
+async function submitPartEdit(event) {
+  event.preventDefault();
+  const part = state.selectedPart;
+  if (!part) return;
+  updatePartEditPartNumber();
+
+  const body = collectPartEditBody();
+  if (!body.part_number || !body.part_name || !body.description || !body.main_category) {
+    showPartEditMessage("Part number, part name, description and main category are required.", "error");
+    return;
+  }
+
+  const isAdmin = Auth.hasPermission(state.currentUser, "part_admin");
+  const endpoint = isAdmin ? `/api/admin/parts/${part.id}/edit` : `/api/parts/${part.id}/edit`;
+  elements.savePartEditBtn.disabled = true;
+
+  try {
+    const result = await apiPost(endpoint, body);
+    if (result.status === "pending_review") {
+      showMessage(`${part.part_number} edit request sent to Part List Admins.`, "success");
+    } else {
+      showMessage(`${result.part.part_number} updated.`, "success");
+    }
+    closePartActionModal();
+    await loadData();
+  } catch (error) {
+    showPartEditMessage(error.message, "error");
+    elements.savePartEditBtn.disabled = false;
+  }
+}
+
+function collectPartEditBody() {
+  return {
+    project_code: sanitizeCompactValue(elements.partEditProjectCode.value),
+    main_code: String(elements.partEditMainCode.value || "").replace(/[^1-9]/g, "").slice(0, 1),
+    sequence_no: sanitizeSequenceValue(elements.partEditSequenceNo.value),
+    revision_mode: elements.partEditRevisionMode.value,
+    revision_code: sanitizeCompactValue(elements.partEditRevisionCode.value),
+    part_number: elements.partEditPartNumber.value.trim(),
+    part_name: elements.partEditPartName.value.trim(),
+    description: elements.partEditDescription.value.trim(),
+    main_category: elements.partEditMainCategory.value.trim(),
+    sub_category: elements.partEditSubCategory.value.trim()
+  };
+}
+
+function showPartEditMessage(message, type) {
+  elements.partEditMessage.textContent = message;
+  elements.partEditMessage.className = `message-box ${type}`;
+}
+
+function hidePartEditMessage() {
+  elements.partEditMessage.textContent = "";
+  elements.partEditMessage.className = "message-box hidden";
 }
 
 async function submitSelectedPartRevisionRequest() {
@@ -471,6 +603,46 @@ function flattenSearchValue(value) {
   return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
 }
 
+function parsePartNumber(partNumber) {
+  const match = String(partNumber || "").trim().match(/^([A-Z0-9]{4})-([1-9])(\d{3})-([A-Z0-9]{3})$/i);
+  if (!match) {
+    return {
+      projectCode: "",
+      mainCode: "",
+      sequenceNo: "",
+      revisionCode: "",
+      revisionMode: ""
+    };
+  }
+
+  const revisionCode = match[4].toUpperCase();
+  return {
+    projectCode: match[1].toUpperCase(),
+    mainCode: match[2],
+    sequenceNo: match[3],
+    revisionCode,
+    revisionMode: inferPartRevisionMode(revisionCode)
+  };
+}
+
+function inferPartRevisionMode(revisionCode) {
+  const code = sanitizeCompactValue(revisionCode);
+  if (/^D\d{2}$/.test(code)) return "design";
+  if (/^C\d{2}$/.test(code)) return "change";
+  if (/^\d{2}[A-Z]$/.test(code)) return "released";
+  return "released";
+}
+
+function sanitizeCompactValue(value) {
+  return normalizeDisplayText(value).toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+}
+
+function sanitizeSequenceValue(value) {
+  const sequence = String(value ?? "").replace(/\D/g, "");
+  if (!/^\d{1,3}$/.test(sequence)) return "";
+  return sequence.padStart(3, "0");
+}
+
 async function apiGet(path) {
   const response = await fetch(`${API_BASE}${path}`);
   const data = await response.json();
@@ -515,18 +687,18 @@ function normalizeSearch(value) {
 
 function normalizeDisplayText(value) {
   return String(value ?? "")
-    .replaceAll("Ä°", "I")
-    .replaceAll("Ä±", "i")
-    .replaceAll("Ä", "G")
-    .replaceAll("ÄŸ", "g")
-    .replaceAll("Ãœ", "U")
-    .replaceAll("Ã¼", "u")
-    .replaceAll("Å", "S")
-    .replaceAll("ÅŸ", "s")
-    .replaceAll("Ã–", "O")
-    .replaceAll("Ã¶", "o")
-    .replaceAll("Ã‡", "C")
-    .replaceAll("Ã§", "c");
+    .replaceAll("İ", "I")
+    .replaceAll("ı", "i")
+    .replaceAll("Ğ", "G")
+    .replaceAll("ğ", "g")
+    .replaceAll("Ü", "U")
+    .replaceAll("ü", "u")
+    .replaceAll("Ş", "S")
+    .replaceAll("ş", "s")
+    .replaceAll("Ö", "O")
+    .replaceAll("ö", "o")
+    .replaceAll("Ç", "C")
+    .replaceAll("ç", "c");
 }
 
 function formatPartName(value) {

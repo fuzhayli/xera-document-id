@@ -208,11 +208,65 @@
       </header>
       <div class="action-modal-body">
         <div class="action-row">
+          <button class="secondary-btn" id="partEditBtn" type="button">Edit</button>
           <button class="secondary-btn" id="partRevisionRequestBtn" type="button">Revision Request</button>
           <button class="danger-btn" id="partDeleteBtn" type="button">Delete</button>
         </div>
+        <form class="notification-edit-form hidden" id="partEditForm">
+          <div class="message-box hidden" id="partEditMessage"></div>
+          <div class="notification-edit-fields">
+            <label class="field">
+              <span>Project Code</span>
+              <input id="partEditProjectCode" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Main Code</span>
+              <input id="partEditMainCode" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Sequence</span>
+              <input id="partEditSequenceNo" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Revision Mode</span>
+              <select id="partEditRevisionMode">
+                <option value="released">released</option>
+                <option value="design">design</option>
+                <option value="change">change</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Revision Code</span>
+              <input id="partEditRevisionCode" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Part Number</span>
+              <input id="partEditPartNumber" autocomplete="off" readonly>
+            </label>
+            <label class="field">
+              <span>Part Name</span>
+              <input id="partEditPartName" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Description</span>
+              <input id="partEditDescription" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Main Category</span>
+              <input id="partEditMainCategory" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Sub Category</span>
+              <input id="partEditSubCategory" autocomplete="off">
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="secondary-btn" id="cancelPartEditBtn" type="button">Cancel</button>
+            <button class="primary-btn" id="savePartEditBtn" type="submit">Save</button>
+          </div>
+        </form>
         <div class="delete-confirm-box hidden" id="partDeleteConfirm">
-          <p>Silmek istediÄŸinizden emin misiniz?</p>
+          <p>Silmek istediğinizden emin misiniz?</p>
           <div class="action-row">
             <button class="secondary-btn" id="cancelPartDeleteBtn" type="button">Cancel</button>
             <button class="danger-btn" id="confirmPartDeleteBtn" type="button">Yes, delete</button>
