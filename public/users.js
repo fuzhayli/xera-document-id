@@ -101,7 +101,7 @@ async function handleUserAction(event) {
   }
 
   if (button.dataset.action === "permissions") {
-    await savePermissions(targetUser);
+    await savePermissions(targetUser, button);
   }
 }
 
@@ -132,24 +132,22 @@ async function editUser(user) {
   }
 }
 
-async function savePermissions(user) {
+async function savePermissions(user, button) {
   const permissionBox = document.querySelector(`[data-permissions-for="${user.id}"]`);
   if (!permissionBox) return;
   const permissions = [...permissionBox.querySelectorAll("input[data-permission]:checked")]
     .map(input => input.dataset.permission);
 
+  button.disabled = true;
   try {
-    const result = await apiPost(`/api/admin/users/${user.id}`, {
-      display_name: user.display_name,
-      position: user.position,
-      department: user.department,
-      email: user.email,
+    const result = await apiPost(`/api/admin/users/${user.id}/permissions`, {
       permissions
     });
-    showMessage(`Permissions updated: ${result.user.email}`, "success");
+    showMessage(`Permissions updated: ${result.user.email} (${Auth.roleLabel(result.user)})`, "success");
     await loadUsers();
   } catch (error) {
     showMessage(error.message, "error");
+    button.disabled = false;
     await loadUsers();
   }
 }

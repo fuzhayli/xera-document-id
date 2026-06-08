@@ -373,6 +373,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const permissionsUserMatch = url.pathname.match(/^\/api\/admin\/users\/(\d+)\/permissions$/);
+    if (req.method === "POST" && permissionsUserMatch) {
+      const user = await requirePermission(req, "user_admin");
+      const userId = Number(permissionsUserMatch[1]);
+      const body = await readJson(req);
+      const result = await adminUpdateUserPermissions(userId, user, body);
+      return sendJson(res, 200, result);
+    }
+
     const passwordUserMatch = url.pathname.match(/^\/api\/admin\/users\/(\d+)\/password$/);
     if (req.method === "POST" && passwordUserMatch) {
       const user = await requirePermission(req, "user_admin");
@@ -5222,6 +5231,39 @@ async function adminUpdateUser(userId, actor, body) {
 
   const after = await getUserById(before.id);
   await insertAudit(actor.id, "user", after.id, "user.updated", publicUser(before), publicUser(after));
+  return { user: publicUser(after) };
+}
+
+async function adminUpdateUserPermissions(userId, actor, body) {
+  const before = await getUserById(userId);
+  if (!before) throw httpError(404, "not_found", "User not found.");
+
+  const hasPermissionInput = hasOwn(body, "permissions")
+    || hasOwn(body, "admin_permissions")
+    || hasOwn(body, "adminPermissions");
+  if (!hasPermissionInput) {
+    throw httpError(422, "validation_failed", "Permissions are required.");
+  }
+
+  const permissions = normalizePermissions(body.permissions ?? body.admin_permissions ?? body.adminPermissions);
+  if (before.id === actor.id && !permissionsHave(permissions, "user_admin")) {
+    throw httpError(422, "validation_failed", "You cannot remove your own user management permission.");
+  }
+
+  const nextRole = deriveRoleFromPermissions(permissions, before.role);
+  await db.prepare(`
+    UPDATE users
+    SET role = ?,
+        permissions_json = ?
+    WHERE id = ?
+  `).run(
+    nextRole,
+    JSON.stringify(permissions),
+    before.id
+  );
+
+  const after = await getUserById(before.id);
+  await insertAudit(actor.id, "user", after.id, "user.permissions_updated", publicUser(before), publicUser(after));
   return { user: publicUser(after) };
 }
 
