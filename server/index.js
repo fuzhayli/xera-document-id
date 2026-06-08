@@ -545,6 +545,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { admin: user.display_name, items: await listDeletedItems(user, url.searchParams.get("type")) });
     }
 
+    const republishDeletedItemMatch = url.pathname.match(/^\/api\/admin\/deleted-items\/(\d+)\/republish$/);
+    if (req.method === "POST" && republishDeletedItemMatch) {
+      const user = await requireAnyAdmin(req);
+      const deletedItemId = Number(republishDeletedItemMatch[1]);
+      const result = await republishDeletedItem(deletedItemId, user);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/admin/tasks/summary") {
       const user = await requireAnyAdmin(req);
       return sendJson(res, 200, { admin: user.display_name, summary: await getAdminTaskSummary(user) });
@@ -907,7 +915,9 @@ async function initializeDatabase() {
       display_key TEXT NOT NULL,
       record_json TEXT NOT NULL,
       deleted_by_user_id INTEGER NOT NULL REFERENCES users(id),
-      deleted_at TEXT NOT NULL
+      deleted_at TEXT NOT NULL,
+      republished_by_user_id INTEGER REFERENCES users(id),
+      republished_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS notifications (
@@ -942,10 +952,13 @@ async function initializeDatabase() {
   await ensureColumn("document_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
   await ensureColumn("part_records", "deleted_at", "TEXT");
   await ensureColumn("part_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
+  await ensureColumn("deleted_items", "republished_by_user_id", "INTEGER REFERENCES users(id)");
+  await ensureColumn("deleted_items", "republished_at", "TEXT");
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_document_records_deleted ON document_records(deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_deleted ON part_records(deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_type_deleted ON deleted_items(entity_type, deleted_at);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_republished ON deleted_items(republished_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_project_main ON part_records(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_project_main ON part_requests(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_status ON part_requests(status);");
@@ -4219,9 +4232,13 @@ async function insertDeletedItem(entityType, entityId, displayKey, record, user,
 
 async function getDeletedItemById(id) {
   const row = await db.prepare(`
-    SELECT di.*, u.display_name AS deleted_by
+    SELECT
+      di.*,
+      u.display_name AS deleted_by,
+      ru.display_name AS republished_by
     FROM deleted_items di
     LEFT JOIN users u ON u.id = di.deleted_by_user_id
+    LEFT JOIN users ru ON ru.id = di.republished_by_user_id
     WHERE di.id = ?
   `).get(id);
   return normalizeDeletedItem(row);
@@ -4237,14 +4254,113 @@ async function listDeletedItems(user, requestedType = "") {
 
   const placeholders = types.map(() => "?").join(", ");
   const rows = await db.prepare(`
-    SELECT di.*, u.display_name AS deleted_by
+    SELECT
+      di.*,
+      u.display_name AS deleted_by,
+      ru.display_name AS republished_by
     FROM deleted_items di
     LEFT JOIN users u ON u.id = di.deleted_by_user_id
+    LEFT JOIN users ru ON ru.id = di.republished_by_user_id
     WHERE di.entity_type IN (${placeholders})
+      AND di.republished_at IS NULL
     ORDER BY di.deleted_at DESC, di.id DESC
   `).all(...types);
 
   return rows.map(normalizeDeletedItem).filter(Boolean);
+}
+
+async function republishDeletedItem(deletedItemId, user) {
+  const deletedItem = await getDeletedItemById(deletedItemId);
+  if (!deletedItem) throw httpError(404, "not_found", "Deleted item not found.");
+  requireDeletedItemPermission(user, deletedItem.entity_type);
+  if (deletedItem.republished_at) {
+    throw httpError(409, "already_republished", "This deleted item has already been republished.");
+  }
+
+  const now = nowIso();
+  return await db.transaction(async () => {
+    const currentItem = await getDeletedItemById(deletedItemId);
+    if (!currentItem) throw httpError(404, "not_found", "Deleted item not found.");
+    requireDeletedItemPermission(user, currentItem.entity_type);
+    if (currentItem.republished_at) {
+      throw httpError(409, "already_republished", "This deleted item has already been republished.");
+    }
+
+    const record = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
+    if (!record) throw httpError(404, "not_found", "Original record not found.");
+    if (!record.deleted_at) {
+      throw httpError(409, "already_active", "Original record is already active.");
+    }
+
+    await restoreDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
+    await db.prepare(`
+      UPDATE deleted_items
+      SET republished_by_user_id = ?,
+          republished_at = ?
+      WHERE id = ?
+        AND republished_at IS NULL
+    `).run(user.id, now, deletedItemId);
+
+    const restoredRecord = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
+    await insertAudit(
+      user.id,
+      currentItem.entity_type === "document" ? "document_record" : "part_record",
+      currentItem.entity_id,
+      `${currentItem.entity_type}.republished`,
+      record,
+      restoredRecord
+    );
+
+    return {
+      deleted_item: await getDeletedItemById(deletedItemId),
+      [currentItem.entity_type]: restoredRecord
+    };
+  });
+}
+
+function requireDeletedItemPermission(user, entityType) {
+  const permission = entityType === "document" ? "document_admin"
+    : entityType === "part" ? "part_admin"
+      : "";
+  if (!permission || !userHasPermission(user, permission)) {
+    throw httpError(403, "forbidden", `${permissionLabel(permission)} permission is required.`);
+  }
+}
+
+async function getDeletedEntityRecord(entityType, entityId) {
+  if (entityType === "document") {
+    return await db.prepare("SELECT * FROM document_records WHERE id = ?").get(entityId);
+  }
+  if (entityType === "part") {
+    return await db.prepare("SELECT * FROM part_records WHERE id = ?").get(entityId);
+  }
+  throw httpError(400, "invalid_deleted_item_type", "Deleted item type is not supported.");
+}
+
+async function restoreDeletedEntityRecord(entityType, entityId) {
+  if (entityType === "document") {
+    await db.prepare(`
+      UPDATE document_records
+      SET deleted_at = NULL,
+          deleted_by_user_id = NULL
+      WHERE id = ?
+        AND deleted_at IS NOT NULL
+    `).run(entityId);
+    return;
+  }
+
+  if (entityType === "part") {
+    await db.prepare(`
+      UPDATE part_records
+      SET deleted_at = NULL,
+          deleted_by_user_id = NULL
+      WHERE id = ?
+        AND deleted_at IS NOT NULL
+    `).run(entityId);
+    return;
+  }
+
+  throw httpError(400, "invalid_deleted_item_type", "Deleted item type is not supported.");
 }
 
 function normalizeDeletedItem(row) {
@@ -5626,10 +5742,14 @@ function serveStatic(res, requestPath) {
 
   const contentType = getContentType(absolutePath);
   const body = fs.readFileSync(absolutePath);
-  res.writeHead(200, {
+  const headers = {
     "content-type": contentType,
     "content-length": body.length
-  });
+  };
+  if (["text/html", "text/css", "text/javascript"].some(type => contentType.startsWith(type))) {
+    headers["cache-control"] = "no-store";
+  }
+  res.writeHead(200, headers);
   res.end(body);
 }
 

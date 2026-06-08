@@ -11,7 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>XERA Deleted Items</title>
   <script src="/protected-boot.js"></script>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=deleted-items-modal-20260608">
 </head>
 <body>
   <header class="topbar">
@@ -69,6 +69,8 @@
 
         <button class="secondary-btn" id="clearFiltersBtn" type="button">Clear</button>
       </form>
+
+      <div id="messageBox" class="message-box hidden"></div>
     </section>
 
     <section class="panel table-panel">
@@ -99,8 +101,28 @@
     </section>
   </main>
 
+  <div class="modal hidden" id="deletedActionModal" role="dialog" aria-modal="true" aria-labelledby="deletedActionTitle">
+    <div class="modal-backdrop" id="deletedActionBackdrop"></div>
+    <section class="modal-panel action-modal-panel deleted-action-panel">
+      <div class="modal-head">
+        <div>
+          <h2 id="deletedActionTitle">Deleted Record</h2>
+          <p id="deletedActionMeta">Record details</p>
+        </div>
+        <button class="secondary-btn" id="closeDeletedActionBtn" type="button">Close</button>
+      </div>
+      <div class="action-modal-body">
+        <dl class="deleted-detail-list" id="deletedActionDetails"></dl>
+        <div class="form-actions">
+          <button class="secondary-btn" id="cancelDeletedActionBtn" type="button">Cancel</button>
+          <button class="primary-btn" id="republishDeletedItemBtn" type="button">Republish</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <script src="/auth.js"></script>
   <script src="/ui.js"></script>
-  <script src="/deleted-items.js"></script>
+  <script src="/deleted-items.js?v=deleted-items-modal-20260608"></script>
 </body>
 </html>

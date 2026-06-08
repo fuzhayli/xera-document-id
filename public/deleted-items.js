@@ -1,5 +1,6 @@
 const state = {
   items: [],
+  selectedItem: null,
   currentUser: null
 };
 const DELETED_SEARCH_SCOPE_ID = "deletedSearchScope";
@@ -22,7 +23,16 @@ const elements = {
   searchInput: document.getElementById("searchInput"),
   typeFilter: document.getElementById("typeFilter"),
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
-  deletedBody: document.getElementById("deletedBody")
+  messageBox: document.getElementById("messageBox"),
+  deletedBody: document.getElementById("deletedBody"),
+  deletedActionModal: document.getElementById("deletedActionModal"),
+  deletedActionBackdrop: document.getElementById("deletedActionBackdrop"),
+  closeDeletedActionBtn: document.getElementById("closeDeletedActionBtn"),
+  cancelDeletedActionBtn: document.getElementById("cancelDeletedActionBtn"),
+  republishDeletedItemBtn: document.getElementById("republishDeletedItemBtn"),
+  deletedActionTitle: document.getElementById("deletedActionTitle"),
+  deletedActionMeta: document.getElementById("deletedActionMeta"),
+  deletedActionDetails: document.getElementById("deletedActionDetails")
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -42,6 +52,13 @@ async function init() {
   elements.filterForm.addEventListener("input", renderDeletedItems);
   elements.filterForm.addEventListener("change", renderDeletedItems);
   elements.clearFiltersBtn.addEventListener("click", clearFilters);
+  elements.deletedBody.addEventListener("click", handleDeletedItemRowClick);
+  elements.deletedBody.addEventListener("pointerup", handleDeletedItemRowPointer);
+  elements.deletedBody.addEventListener("keydown", handleDeletedItemRowKeydown);
+  elements.deletedActionBackdrop.addEventListener("click", closeDeletedActionModal);
+  elements.closeDeletedActionBtn.addEventListener("click", closeDeletedActionModal);
+  elements.cancelDeletedActionBtn.addEventListener("click", closeDeletedActionModal);
+  elements.republishDeletedItemBtn.addEventListener("click", republishSelectedDeletedItem);
   await loadDeletedItems();
 }
 
@@ -88,8 +105,9 @@ function renderDeletedItems() {
 
   elements.deletedBody.innerHTML = filtered.map(item => {
     const record = item.record || {};
+    const label = item.display_key || `${formatType(item.entity_type)} #${item.entity_id}`;
     return `
-      <tr>
+      <tr class="clickable-row" tabindex="0" role="button" aria-label="${escapeHtml(`Open ${label}`)}" data-id="${escapeHtml(item.id)}">
         <td>${escapeHtml(formatType(item.entity_type))}</td>
         <td class="mono-cell">${escapeHtml(item.display_key || "-")}</td>
         <td>${escapeHtml(getRecordName(item, record))}</td>
@@ -99,6 +117,98 @@ function renderDeletedItems() {
       </tr>
     `;
   }).join("");
+}
+
+function handleDeletedItemRowClick(event) {
+  if (event.detail === 0) return;
+  openDeletedItemFromEvent(event);
+}
+
+function handleDeletedItemRowPointer(event) {
+  if (event.pointerType === "mouse") return;
+  openDeletedItemFromEvent(event);
+}
+
+function openDeletedItemFromEvent(event) {
+  const row = event.target.closest("tr[data-id]");
+  if (!row) return;
+  openDeletedActionModal(row.dataset.id);
+}
+
+function handleDeletedItemRowKeydown(event) {
+  if (!["Enter", " "].includes(event.key)) return;
+  const row = event.target.closest("tr[data-id]");
+  if (!row) return;
+  event.preventDefault();
+  openDeletedActionModal(row.dataset.id);
+}
+
+function openDeletedActionModal(itemId) {
+  const item = state.items.find(candidate => Number(candidate.id) === Number(itemId));
+  if (!item) return;
+
+  state.selectedItem = item;
+  const record = item.record || {};
+  const label = item.display_key || `${formatType(item.entity_type)} #${item.entity_id}`;
+  elements.deletedActionTitle.textContent = label;
+  elements.deletedActionMeta.textContent = `${formatType(item.entity_type)} | Deleted ${formatDateTime(item.deleted_at)}`;
+  elements.deletedActionDetails.innerHTML = buildDeletedActionDetails(item, record);
+  elements.republishDeletedItemBtn.disabled = !canRepublishItem(item);
+  elements.deletedActionModal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeDeletedActionModal() {
+  state.selectedItem = null;
+  elements.deletedActionModal.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+  elements.republishDeletedItemBtn.disabled = false;
+}
+
+async function republishSelectedDeletedItem() {
+  const item = state.selectedItem;
+  if (!item || !canRepublishItem(item)) return;
+
+  const label = item.display_key || `${formatType(item.entity_type)} #${item.entity_id}`;
+
+  elements.republishDeletedItemBtn.disabled = true;
+  showMessage("", "hidden");
+  elements.deletedState.textContent = "Republishing";
+
+  try {
+    await apiPost(`/api/admin/deleted-items/${item.id}/republish`, {});
+    showMessage(`${label} republished.`, "success");
+    closeDeletedActionModal();
+    await loadDeletedItems();
+  } catch (error) {
+    showMessage(error.message, "error");
+    elements.deletedState.textContent = "Check required";
+    elements.republishDeletedItemBtn.disabled = false;
+  }
+}
+
+function buildDeletedActionDetails(item, record) {
+  const rows = [
+    ["Type", formatType(item.entity_type)],
+    ["Record", item.display_key || "-"],
+    ["Name", getRecordName(item, record)],
+    ["Details", getRecordDetails(item, record)],
+    ["Deleted By", item.deleted_by || "-"],
+    ["Deleted At", formatDateTime(item.deleted_at)]
+  ];
+
+  return rows.map(([label, value]) => `
+    <div>
+      <dt>${escapeHtml(label)}</dt>
+      <dd>${escapeHtml(value)}</dd>
+    </div>
+  `).join("");
+}
+
+function canRepublishItem(item) {
+  if (item.entity_type === "document") return Auth.hasPermission(state.currentUser, "document_admin");
+  if (item.entity_type === "part") return Auth.hasPermission(state.currentUser, "part_admin");
+  return false;
 }
 
 function getFilteredItems() {
@@ -154,6 +264,32 @@ async function apiGet(path) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || "Request failed.");
   return data;
+}
+
+async function apiPost(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      ...Auth.authHeaders(),
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || "Request failed.");
+  return data;
+}
+
+function showMessage(text, type) {
+  elements.messageBox.className = "message-box";
+  if (type === "hidden" || !text) {
+    elements.messageBox.classList.add("hidden");
+    elements.messageBox.textContent = "";
+    return;
+  }
+  elements.messageBox.classList.add(type);
+  elements.messageBox.textContent = text;
+  elements.messageBox.classList.remove("hidden");
 }
 
 function setApiStatus(isOnline) {
