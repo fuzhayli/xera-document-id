@@ -5,7 +5,7 @@
   "description": "XERA Document ID Request and Approval System MVP backend.",
   "type": "commonjs",
   "scripts": {
-    "start": "node --no-warnings server/index.js",
+    "start": "node --no-warnings scripts/purge-deleted-items.js && node --no-warnings server/index.js",
     "dev": "node --watch --no-warnings server/index.js",
     "migrate:turso": "node --no-warnings scripts/migrate-sqlite-to-turso.js",
     "purge:deleted-items": "node --no-warnings scripts/purge-deleted-items.js"
