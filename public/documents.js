@@ -68,9 +68,6 @@ const elements = {
   documentEditWrittenBy: document.getElementById("documentEditWrittenBy"),
   documentEditCreationDate: document.getElementById("documentEditCreationDate"),
   documentEditControlStatus: document.getElementById("documentEditControlStatus"),
-  documentEditDetailType: document.getElementById("documentEditDetailType"),
-  documentEditDetailCode: document.getElementById("documentEditDetailCode"),
-  documentEditDetailVersion: document.getElementById("documentEditDetailVersion"),
   documentEditLanguage: document.getElementById("documentEditLanguage"),
   cancelDocumentEditBtn: document.getElementById("cancelDocumentEditBtn"),
   saveDocumentEditBtn: document.getElementById("saveDocumentEditBtn"),
@@ -283,9 +280,6 @@ function fillDocumentEditForm(documentRecord) {
   elements.documentEditWrittenBy.value = documentRecord.written_by || "";
   elements.documentEditCreationDate.value = documentRecord.creation_date || "";
   elements.documentEditControlStatus.value = documentRecord.control_status || "controlled";
-  elements.documentEditDetailType.value = documentRecord.detail_type || "";
-  elements.documentEditDetailCode.value = documentRecord.detail_code || "";
-  elements.documentEditDetailVersion.value = documentRecord.detail_version || "";
   elements.documentEditLanguage.value = documentRecord.language || "";
 }
 
@@ -333,9 +327,6 @@ function collectDocumentEditBody(documentRecord) {
     written_by: elements.documentEditWrittenBy.value.trim(),
     creation_date: elements.documentEditCreationDate.value,
     control_status: elements.documentEditControlStatus.value,
-    detail_type: elements.documentEditDetailType.value.trim(),
-    detail_code: elements.documentEditDetailCode.value.trim(),
-    detail_version: elements.documentEditDetailVersion.value.trim(),
     language: elements.documentEditLanguage.value.trim()
   };
 
