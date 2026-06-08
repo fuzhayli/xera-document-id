@@ -7,304 +7,10 @@ loadEnvFile(path.join(ROOT_DIR, ".env"));
 
 const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
-const RUN_NAME = "import_document_number_list_r00_20260608";
+const RUN_NAME = "import_document_number_list_r00_all_rows_with_x_names_20260608";
+const DEFAULT_CREATION_DATE = "2026-06-08";
 
-const DOCUMENTS = [
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 5,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "001",
-    "document_no": "XD-26-001",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Informed Consent for PMCF Survey_Radiologist 1",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-06-08",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-001_GR10X_Informed Consent for PMCF Survey_Radiologist 1_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 6,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "002",
-    "document_no": "XD-26-002",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Informed Consent for PMCF Survey_Radiologist 2",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-06-08",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-002_GR10X_Informed Consent for PMCF Survey_Radiologist 2_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 7,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "003",
-    "document_no": "XD-26-003",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Informed Consent for PMCF Survey_Radiology Technician 1",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-06-08",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-003_GR10X_Informed Consent for PMCF Survey_Radiology Technician 1_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 8,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "004",
-    "document_no": "XD-26-004",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Informed Consent for PMCF Survey_Radiology Technician 2",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-06-08",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-004_GR10X_Informed Consent for PMCF Survey_Radiology Technician 2_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 12,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "008",
-    "document_no": "XD-26-008",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "GR10X Labels (Draft for Administrative Change on Certificates)",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-02-10",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-008_GR10X_GR10X Labels (Draft for Administrative Change on Certificates)_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 13,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "009",
-    "document_no": "XD-26-009",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "XEBT-W6",
-    "document_name": "Initial Issue Report Hacettepe Room1",
-    "written_by": "Huzaifa",
-    "creation_date": "2026-05-12",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-009_XEBT-W6_Initial Issue Report Hacettepe Room1_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 14,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "010",
-    "document_no": "XD-26-010",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "XEBT-W6",
-    "document_name": "Action_Report on initial field issue Hacettepe Room1",
-    "written_by": "Huzaifa",
-    "creation_date": "2026-05-13",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-010_XEBT-W6_Action_Report on initial field issue Hacettepe Room1_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 15,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "011",
-    "document_no": "XD-26-011",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "LoA for Nepal Tender (Absolute Meditech Pvt. Ltd.)",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-05-14",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-011_GR10X_LoA for Nepal Tender (Absolute Meditech Pvt. Ltd.)_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 16,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "012",
-    "document_no": "XD-26-012",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Relationship Letter_XERA-TNMI (UAE Registration)",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-05-14",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-012_GR10X_Relationship Letter_XERA-TNMI (UAE Registration)_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 17,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "013",
-    "document_no": "XD-26-013",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Lifetime of General Radiography X-ray System_EN",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-05-14",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-013_GR10X_Lifetime of General Radiography X-ray System_EN_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 18,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "014",
-    "document_no": "XD-26-014",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "Cihaz Kullanım Ömrü Belgesi_TR",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-05-15",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-014_GR10X_Cihaz Kullanım Ömrü Belgesi_TR_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 19,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "015",
-    "document_no": "XD-26-015",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "GR10X",
-    "document_name": "LoA for Nepal Tender_(M/S Bhagwati Scientific And Trading Order Suppliers)",
-    "written_by": "Aisha F.",
-    "creation_date": "2026-05-14",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-015_GR10X_LoA for Nepal Tender_(M-S Bhagwati Scientific And Trading Order Suppliers)_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "D_Documents",
-    "source_row": 20,
-    "category": "D",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "016",
-    "document_no": "XD-26-016",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "R&D",
-    "document_name": "VR10X-GR10X_USB Signal Isolator Technical Documentation Report_r00",
-    "written_by": "Emre Tuncer",
-    "creation_date": "2026-05-18",
-    "control_status": "controlled",
-    "generated_filename": "XD-26-016_R&D_VR10X-GR10X_USB Signal Isolator Technical Documentation Report_r00_r00",
-    "payload": {}
-  },
-  {
-    "source_sheet": "QMS_Documents",
-    "source_row": 5,
-    "category": "QMS",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "000",
-    "document_no": "XQM-26",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "26",
-    "document_name": "Quality Manual",
-    "written_by": "Auto Published",
-    "creation_date": "2026-03-26",
-    "control_status": "controlled",
-    "generated_filename": "XQM-26_Quality Manual_r00",
-    "payload": {
-      "detail_type": "QM"
-    }
-  },
-  {
-    "source_sheet": "QMS_Documents",
-    "source_row": 6,
-    "category": "QMS",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "000",
-    "document_no": "XQP-01",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "01",
-    "document_name": "Control of Document and Records Management",
-    "written_by": "Auto Published",
-    "creation_date": "2026-03-31",
-    "control_status": "controlled",
-    "generated_filename": "XQP-01_Control of Document and Records Management_r00",
-    "payload": {
-      "detail_type": "QP"
-    }
-  },
-  {
-    "source_sheet": "QMS_Documents",
-    "source_row": 7,
-    "category": "QMS",
-    "company_code": "X",
-    "year_yy": "26",
-    "sequence_no": "000",
-    "document_no": "XQP-02",
-    "revision": "r00",
-    "reference_type": "model",
-    "reference_value": "02",
-    "document_name": "Control of Quality Objective & Communication",
-    "written_by": "Auto Published",
-    "creation_date": "2026-04-20",
-    "control_status": "controlled",
-    "generated_filename": "XQP-02_Control of Quality Objective & Communication_r00",
-    "payload": {
-      "detail_type": "QP"
-    }
-  }
-];
+const DOCUMENTS = buildDocumentsFromWorkbookPlan();
 
 main().catch(error => {
   console.error("Document number list import failed.");
@@ -434,27 +140,18 @@ async function main() {
         );
 
         const recordId = Number(recordResult.lastInsertRowid);
-        await insertAudit(db, systemUser.id, "document_request", requestId, "document_number_list.imported", null, {
-          document_no: document.document_no,
-          document_name: document.document_name,
-          source_sheet: document.source_sheet,
-          source_row: document.source_row
-        });
-        await insertAudit(db, systemUser.id, "document_record", recordId, "document_number_list.imported", null, {
-          document_no: document.document_no,
-          document_name: document.document_name,
-          source_sheet: document.source_sheet,
-          source_row: document.source_row
-        });
+        await insertAudit(db, systemUser.id, "document_request", requestId, "document_number_list.imported", null, auditPayload(document));
+        await insertAudit(db, systemUser.id, "document_record", recordId, "document_number_list.imported", null, auditPayload(document));
         await bumpDocumentSequence(db, document);
         inserted += 1;
       }
 
       const result = {
         source: "Document Number List_r00.xlsx",
-        totalRowsWithDocumentName: DOCUMENTS.length,
+        totalRowsWithDocumentId: DOCUMENTS.length,
         inserted,
         skipped,
+        blankDocumentNamesFilledAsX: DOCUMENTS.filter(document => /^x\d+$/.test(document.document_name)).length,
         skippedItems
       };
 
@@ -470,6 +167,202 @@ async function main() {
     console.log(JSON.stringify(summary, null, 2));
   } finally {
     if (typeof db.close === "function") await db.close();
+  }
+}
+
+function buildDocumentsFromWorkbookPlan() {
+  const documents = [];
+  let blankNameIndex = 0;
+
+  const add = (input) => {
+    const documentName = cleanText(input.document_name) || `x${++blankNameIndex}`;
+    const document = {
+      source_sheet: input.source_sheet,
+      source_row: input.source_row,
+      category: input.category,
+      company_code: input.company_code || "X",
+      year_yy: input.year_yy || "26",
+      sequence_no: input.sequence_no || "000",
+      document_no: input.document_no,
+      revision: normalizeRevision(input.revision),
+      reference_type: input.reference_type || "model",
+      reference_value: cleanText(input.reference_value),
+      document_name: documentName,
+      written_by: cleanText(input.written_by) || "Auto Published",
+      creation_date: input.creation_date || DEFAULT_CREATION_DATE,
+      control_status: input.control_status || "controlled",
+      payload: input.payload || {}
+    };
+    document.generated_filename = buildGeneratedFilename(document);
+    documents.push(document);
+  };
+
+  const dRows = {
+    "001": { product: "GR10X", name: "Informed Consent for PMCF Survey_Radiologist 1", writtenBy: "Aisha F." },
+    "002": { product: "GR10X", name: "Informed Consent for PMCF Survey_Radiologist 2", writtenBy: "Aisha F." },
+    "003": { product: "GR10X", name: "Informed Consent for PMCF Survey_Radiology Technician 1", writtenBy: "Aisha F." },
+    "004": { product: "GR10X", name: "Informed Consent for PMCF Survey_Radiology Technician 2", writtenBy: "Aisha F." },
+    "005": { product: "GR10X", writtenBy: "Aisha F." },
+    "006": { product: "GR10X", writtenBy: "Aisha F." },
+    "007": { product: "GR10X", writtenBy: "Aisha F." },
+    "008": { product: "GR10X", name: "GR10X Labels (Draft for Administrative Change on Certificates)", writtenBy: "Aisha F.", creationDate: "2026-02-10" },
+    "009": { product: "XEBT-W6", name: "Initial Issue Report Hacettepe Room1", writtenBy: "Huzaifa", creationDate: "2026-05-12" },
+    "010": { product: "XEBT-W6", name: "Action_Report on initial field issue Hacettepe Room1", writtenBy: "Huzaifa", creationDate: "2026-05-13" },
+    "011": { product: "GR10X", name: "LoA for Nepal Tender (Absolute Meditech Pvt. Ltd.)", writtenBy: "Aisha F.", creationDate: "2026-05-14" },
+    "012": { product: "GR10X", name: "Relationship Letter_XERA-TNMI (UAE Registration)", writtenBy: "Aisha F.", creationDate: "2026-05-14" },
+    "013": { product: "GR10X", name: "Lifetime of General Radiography X-ray System_EN", writtenBy: "Aisha F.", creationDate: "2026-05-14" },
+    "014": { product: "GR10X", name: "Cihaz Kullanım Ömrü Belgesi_TR", writtenBy: "Aisha F.", creationDate: "2026-05-15" },
+    "015": { product: "GR10X", name: "LoA for Nepal Tender_(M/S Bhagwati Scientific And Trading Order Suppliers)", writtenBy: "Aisha F.", creationDate: "2026-05-14" },
+    "016": { product: "R&D", name: "VR10X-GR10X_USB Signal Isolator Technical Documentation Report_r00", writtenBy: "Emre Tuncer", creationDate: "2026-05-18" }
+  };
+
+  for (let index = 1; index <= 26; index += 1) {
+    const sequenceNo = pad(index, 3);
+    const row = dRows[sequenceNo] || {};
+    add({
+      source_sheet: "D_Documents",
+      source_row: index + 4,
+      category: "D",
+      year_yy: "26",
+      sequence_no: sequenceNo,
+      document_no: `XD-26-${sequenceNo}`,
+      revision: "00",
+      reference_value: row.product || "",
+      document_name: row.name || "",
+      written_by: row.writtenBy || "",
+      creation_date: row.creationDate || DEFAULT_CREATION_DATE
+    });
+  }
+
+  addSequentialRows({ documents, add, sheet: "R_Documents", category: "R", prefix: "XR", count: 26, dateSuffix: true });
+  addSequentialRows({ documents, add, sheet: "MD_Documents", category: "MD", prefix: "XMD", count: 26 });
+  addSequentialRows({ documents, add, sheet: "MR_Documents", category: "MR", prefix: "XMR", count: 26, dateSuffix: true });
+
+  const ecRows = [
+    ["A", "R", ""],
+    ["A", "Rr", "001"],
+    ["A", "E", ""],
+    ["A", "O", ""],
+    ["A", "N", ""],
+    ["B", "R", ""],
+    ["B", "Rr", "001"],
+    ["B", "E", ""],
+    ["B", "O", ""],
+    ["B", "N", ""]
+  ];
+  ecRows.forEach(([order, type, sequence], rowIndex) => {
+    const sequenceNo = type === "Rr" ? sequence : "000";
+    add({
+      source_sheet: "EC_Documents",
+      source_row: rowIndex + 5,
+      category: "EC",
+      year_yy: "26",
+      sequence_no: sequenceNo,
+      document_no: `XEC-26${order}-${type}${type === "Rr" ? `-${sequenceNo}` : ""}`,
+      revision: "00",
+      document_name: "",
+      payload: { detail_type: type, detail_code: order }
+    });
+  });
+
+  const templateRows = [
+    [5, "05", "01", "01", "Quotation Form Template_EN", "Can YALİN", "2026-05-11"],
+    [6, "05", "02", "02", "Fiyat Teklifi Formun Template_TR", "Can YALİN", "2026-05-11"],
+    [7, "05", "03", "01", "Proforma Invoice Template", "Can YALİN", "2026-05-11"],
+    [8, "05", "04", "03", "Packing List & Commercial Invoice Template", "Can YALİN", "2026-05-11"],
+    [9, "05", "05", "01", "Service Training Certificate Template", "Can YALİN", "2026-05-11"],
+    [10, "05", "06", "01", "Certificate of Authorization for Servicing Activities Template", "Can YALİN", "2026-05-11"],
+    [11, "05", "07", "01", "Export Loading Information/ İhracat Yükleme Template", "Can YALİN", "2026-05-11"],
+    [12, "05", "08", "01", "Sales Information List Template", "Can YALİN", "2026-05-11"],
+    [13, "05", "09", "01", "General Sales Contract Template", "Can YALİN", "2026-05-11"],
+    [14, "18", "01", "00", "Initial Issue Report Template", "Ethan", "2026-05-11"],
+    [15, "18", "02", "00", "Action Report on Initial Field Issue", "Ethan", "2026-05-12"]
+  ];
+  templateRows.forEach(([sourceRow, processNo, sequenceNo, revision, name, writtenBy, creationDate]) => {
+    add({
+      source_sheet: "Template",
+      source_row: sourceRow,
+      category: "QMS",
+      year_yy: "26",
+      sequence_no: sequenceNo,
+      document_no: `XQT-${processNo}-${sequenceNo}`,
+      revision,
+      reference_value: processNo,
+      document_name: name,
+      written_by: writtenBy,
+      creation_date: creationDate,
+      payload: { detail_type: "QT" }
+    });
+  });
+
+  add({
+    source_sheet: "QMS_Documents",
+    source_row: 5,
+    category: "QMS",
+    year_yy: "26",
+    sequence_no: "000",
+    document_no: "XQM-26",
+    revision: "00",
+    reference_value: "26",
+    document_name: "Quality Manual",
+    creation_date: "2026-03-26",
+    payload: { detail_type: "QM" }
+  });
+
+  const qmsNames = {
+    "01": { name: "Control of Document and Records Management", creationDate: "2026-03-31" },
+    "02": { name: "Control of Quality Objective & Communication", creationDate: "2026-04-20" }
+  };
+  for (let index = 1; index <= 21; index += 1) {
+    const processNo = pad(index, 2);
+    const row = qmsNames[processNo] || {};
+    add({
+      source_sheet: "QMS_Documents",
+      source_row: index + 5,
+      category: "QMS",
+      year_yy: "26",
+      sequence_no: "000",
+      document_no: `XQP-${processNo}`,
+      revision: "00",
+      reference_value: processNo,
+      document_name: row.name || "",
+      creation_date: row.creationDate || DEFAULT_CREATION_DATE,
+      payload: { detail_type: "QP" }
+    });
+  }
+
+  add({
+    source_sheet: "QMS_Documents",
+    source_row: 27,
+    category: "SOP",
+    year_yy: "26",
+    sequence_no: "001",
+    document_no: "XQS-01-001",
+    revision: "00",
+    reference_value: "01",
+    document_name: "",
+    creation_date: DEFAULT_CREATION_DATE,
+    payload: { detail_type: "SOP" }
+  });
+
+  return documents;
+}
+
+function addSequentialRows({ add, sheet, category, prefix, count, dateSuffix = false }) {
+  for (let index = 1; index <= count; index += 1) {
+    const sequenceNo = pad(index, 3);
+    add({
+      source_sheet: sheet,
+      source_row: index + 4,
+      category,
+      year_yy: "26",
+      sequence_no: sequenceNo,
+      document_no: `${prefix}-26-${sequenceNo}`,
+      revision: "00",
+      document_name: "",
+      creation_date: DEFAULT_CREATION_DATE,
+      payload: dateSuffix ? { suffix_type: "date" } : {}
+    });
   }
 }
 
@@ -494,7 +387,6 @@ async function findExistingDocument(db, document) {
     SELECT id
     FROM document_records
     WHERE document_no = ?
-      AND deleted_at IS NULL
     LIMIT 1
   `).get(document.document_no);
   if (recordByNumber) return { reason: "document_no already exists in document_records" };
@@ -503,7 +395,6 @@ async function findExistingDocument(db, document) {
     SELECT id
     FROM document_records
     WHERE UPPER(generated_filename) = UPPER(?)
-      AND deleted_at IS NULL
     LIMIT 1
   `).get(document.generated_filename);
   if (recordByFilename) return { reason: "generated_filename already exists in document_records" };
@@ -551,15 +442,9 @@ function sequencePrefixForDocument(document) {
   if (document.category === "R") return `XR-${document.year_yy}`;
   if (document.category === "MD") return `XMD-${document.year_yy}`;
   if (document.category === "MR") return `XMR-${document.year_yy}`;
-  if (document.category === "EC" && document.document_no.includes("-Rr-")) {
-    return document.document_no.replace(/-\d{3}$/, "");
-  }
-  if (document.category === "QMS" && document.document_no.startsWith("XQT-")) {
-    return document.document_no.replace(/-\d{2,3}$/, "");
-  }
-  if (document.category === "SOP" && /^XQS-\d{2}-\d{3}$/.test(document.document_no)) {
-    return document.document_no.replace(/-\d{3}$/, "");
-  }
+  if (document.category === "EC" && document.document_no.includes("-Rr-")) return document.document_no.replace(/-\d{3}$/, "");
+  if (document.category === "QMS" && document.document_no.startsWith("XQT-")) return document.document_no.replace(/-\d{2,3}$/, "");
+  if (document.category === "SOP" && /^XQS-\d{2}-\d{3}$/.test(document.document_no)) return document.document_no.replace(/-\d{3}$/, "");
   return "";
 }
 
@@ -567,15 +452,47 @@ async function insertAudit(db, actorUserId, entityType, entityId, action, before
   await db.prepare(`
     INSERT INTO audit_logs (actor_user_id, entity_type, entity_id, action, before_json, after_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    actorUserId,
-    entityType,
-    entityId,
-    action,
-    before ? JSON.stringify(before) : null,
-    after ? JSON.stringify(after) : null,
-    nowIso()
-  );
+  `).run(actorUserId, entityType, entityId, action, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, nowIso());
+}
+
+function auditPayload(document) {
+  return {
+    document_no: document.document_no,
+    document_name: document.document_name,
+    source_sheet: document.source_sheet,
+    source_row: document.source_row
+  };
+}
+
+function buildGeneratedFilename(document) {
+  if (document.category === "MARKETING") return document.document_no;
+  const suffix = ["R", "MR"].includes(document.category)
+    ? document.creation_date.replaceAll("-", "")
+    : document.revision;
+  const parts = [document.document_no];
+  if (!["QMS", "SOP"].includes(document.category) && document.reference_value) parts.push(document.reference_value);
+  parts.push(document.document_name, suffix);
+  return sanitizeFilename(parts.filter(Boolean).join("_"));
+}
+
+function sanitizeFilename(value) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeRevision(value) {
+  const digits = String(value || "00").replace(/\D/g, "");
+  return `r${(digits || "00").padStart(2, "0").slice(-2)}`;
+}
+
+function pad(value, length) {
+  return String(value).padStart(length, "0");
 }
 
 function nowIso() {
@@ -594,9 +511,7 @@ function loadEnvFile(filePath) {
 
     const key = trimmed.slice(0, separatorIndex).trim();
     let value = trimmed.slice(separatorIndex + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
     if (!process.env[key]) process.env[key] = value;
   }
 }
