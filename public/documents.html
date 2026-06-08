@@ -158,9 +158,99 @@
       </header>
       <div class="action-modal-body">
         <div class="action-row">
+          <button class="secondary-btn" id="documentEditBtn" type="button">Edit</button>
           <button class="secondary-btn" id="documentRevisionRequestBtn" type="button">Revision Request</button>
           <button class="danger-btn" id="documentDeleteBtn" type="button">Delete</button>
         </div>
+        <form class="notification-edit-form hidden" id="documentEditForm">
+          <div class="message-box hidden" id="documentEditMessage"></div>
+          <div class="notification-edit-fields">
+            <label class="field">
+              <span>Category</span>
+              <select id="documentEditCategory">
+                <option value="D">D</option>
+                <option value="R">R</option>
+                <option value="MD">MD</option>
+                <option value="MR">MR</option>
+                <option value="EC">EC</option>
+                <option value="QMS">QMS</option>
+                <option value="SOP">SOP</option>
+                <option value="MARKETING">MARKETING</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Company Code</span>
+              <input id="documentEditCompanyCode" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Year</span>
+              <input id="documentEditYearYy" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Sequence</span>
+              <input id="documentEditSequenceNo" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Revision</span>
+              <input id="documentEditRevision" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Document No</span>
+              <input id="documentEditDocumentNo" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Generated Filename</span>
+              <input id="documentEditGeneratedFilename" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Reference Type</span>
+              <input id="documentEditReferenceType" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Reference</span>
+              <input id="documentEditReferenceValue" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Document Name</span>
+              <input id="documentEditDocumentName" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Written By</span>
+              <input id="documentEditWrittenBy" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Creation Date</span>
+              <input id="documentEditCreationDate" type="date">
+            </label>
+            <label class="field">
+              <span>Control Status</span>
+              <select id="documentEditControlStatus">
+                <option value="controlled">controlled</option>
+                <option value="uncontrolled">uncontrolled</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Detail Type</span>
+              <input id="documentEditDetailType" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Detail Code</span>
+              <input id="documentEditDetailCode" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Detail Version</span>
+              <input id="documentEditDetailVersion" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Language</span>
+              <input id="documentEditLanguage" autocomplete="off">
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="secondary-btn" id="cancelDocumentEditBtn" type="button">Cancel</button>
+            <button class="primary-btn" id="saveDocumentEditBtn" type="submit">Save</button>
+          </div>
+        </form>
         <div class="delete-confirm-box hidden" id="documentDeleteConfirm">
           <p>Silmek istediğinizden emin misiniz?</p>
           <div class="action-row">

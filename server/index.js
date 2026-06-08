@@ -445,6 +445,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, result);
     }
 
+    const editDocumentMatch = url.pathname.match(/^\/api\/documents\/(\d+)\/edit$/);
+    if (req.method === "POST" && editDocumentMatch) {
+      const user = await resolveUser(req);
+      const documentId = Number(editDocumentMatch[1]);
+      const body = await readJson(req);
+      const result = await editDocumentRecordByRequester(documentId, user, body);
+      return sendJson(res, result.status === "pending_review" ? 202 : 200, result);
+    }
+
+    const adminEditDocumentMatch = url.pathname.match(/^\/api\/admin\/documents\/(\d+)\/edit$/);
+    if (req.method === "POST" && adminEditDocumentMatch) {
+      const user = await requirePermission(req, "document_admin");
+      const documentId = Number(adminEditDocumentMatch[1]);
+      const body = await readJson(req);
+      const result = await adminEditDocumentRecord(documentId, user, body);
+      return sendJson(res, 200, result);
+    }
+
     const deleteDocumentMatch = url.pathname.match(/^\/api\/admin\/documents\/(\d+)\/delete$/);
     if (req.method === "POST" && deleteDocumentMatch) {
       const user = await requirePermission(req, "document_admin");
@@ -3162,6 +3180,405 @@ async function renameApprovedDocument(documentId, user, documentName) {
   return { document: after };
 }
 
+async function adminEditDocumentRecord(documentId, user, body = {}) {
+  const result = await updateDocumentRecordDetails(documentId, user, body, {
+    reviewedByAdmin: true,
+    auditAction: "document.admin_edited"
+  });
+  return { status: "updated", document: result.document };
+}
+
+async function editDocumentRecordByRequester(documentId, user, body = {}) {
+  const before = await getDocumentById(documentId);
+  if (!before) throw httpError(404, "not_found", "Document record not found.");
+  const request = before.request_id ? await getRequestById(before.request_id) : null;
+  if (!request || Number(request.requested_by_user_id) !== Number(user.id)) {
+    throw httpError(403, "forbidden", "Only the original requester can edit this document.");
+  }
+
+  const systemUser = await getSystemUser();
+  if (Number(before.approved_by_user_id) === Number(systemUser.id)) {
+    const result = await updateDocumentRecordDetails(documentId, user, body, {
+      reviewedByAdmin: false,
+      auditAction: "document.user_auto_edited"
+    });
+    await refreshOpenDocumentAutoPublishedNotifications(result.document, user);
+    return { status: "updated", document: result.document };
+  }
+
+  const pending = await getPendingDocumentEditNotificationForDocument(documentId);
+  if (pending) {
+    throw httpError(409, "edit_request_exists", "There is already a pending edit request for this document.");
+  }
+
+  const proposed = normalizeDocumentRecordEditInput(before, body, safeParseJson(request.payload_json) || {});
+  await validateDocumentRecordEditInput(proposed, {
+    ignoreDocumentId: before.id,
+    ignoreRequestId: request.id
+  });
+  await notifyAdminsOfDocumentEditRequest(before, proposed, user, request);
+  return { status: "pending_review", document: before };
+}
+
+async function updateDocumentRecordDetails(documentId, user, body = {}, options = {}) {
+  const before = await getDocumentById(documentId);
+  if (!before) throw httpError(404, "not_found", "Document record not found.");
+  const request = before.request_id ? await getRequestById(before.request_id) : null;
+  const payload = request ? (safeParseJson(request.payload_json) || {}) : {};
+  const next = normalizeDocumentRecordEditInput(before, body, payload);
+
+  await validateDocumentRecordEditInput(next, {
+    ignoreDocumentId: before.id,
+    ignoreRequestId: request ? request.id : null
+  });
+
+  const now = nowIso();
+  const approvedByUserId = options.reviewedByAdmin ? user.id : before.approved_by_user_id;
+  const approvedAt = options.reviewedByAdmin ? now : before.approved_at;
+
+  await db.prepare(`
+    UPDATE document_records
+    SET category = ?,
+        company_code = ?,
+        year_yy = ?,
+        sequence_no = ?,
+        document_no = ?,
+        revision = ?,
+        reference_type = ?,
+        reference_value = ?,
+        document_name = ?,
+        written_by = ?,
+        creation_date = ?,
+        control_status = ?,
+        generated_filename = ?,
+        approved_by_user_id = ?,
+        approved_at = ?
+    WHERE id = ?
+      AND deleted_at IS NULL
+  `).run(
+    next.category,
+    next.company_code,
+    next.year_yy,
+    next.sequence_no,
+    next.document_no,
+    next.revision,
+    next.reference_type,
+    next.reference_value,
+    next.document_name,
+    next.written_by,
+    next.creation_date,
+    next.control_status,
+    next.generated_filename,
+    approvedByUserId,
+    approvedAt,
+    before.id
+  );
+
+  if (request) {
+    const nextPayload = {
+      ...payload,
+      category: next.category,
+      company_code: next.company_code,
+      year_yy: next.year_yy,
+      sequence_no: next.sequence_no,
+      document_no: next.document_no,
+      revision: next.revision,
+      reference_type: next.reference_type,
+      reference_value: next.reference_value,
+      document_name: next.document_name,
+      written_by: next.written_by,
+      creation_date: next.creation_date,
+      control_status: next.control_status,
+      generated_filename: next.generated_filename,
+      detail_type: next.detail_type,
+      detail_code: next.detail_code,
+      detail_version: next.detail_version,
+      language: next.language
+    };
+
+    await db.prepare(`
+      UPDATE document_requests
+      SET category = ?,
+          company_code = ?,
+          year_yy = ?,
+          sequence_no = ?,
+          document_no = ?,
+          revision = ?,
+          reference_type = ?,
+          reference_value = ?,
+          document_name = ?,
+          written_by = ?,
+          creation_date = ?,
+          control_status = ?,
+          generated_filename = ?,
+          approved_by_user_id = ?,
+          approved_at = ?,
+          payload_json = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      next.category,
+      next.company_code,
+      next.year_yy,
+      next.sequence_no,
+      next.document_no,
+      next.revision,
+      next.reference_type,
+      next.reference_value,
+      next.document_name,
+      next.written_by,
+      next.creation_date,
+      next.control_status,
+      next.generated_filename,
+      approvedByUserId,
+      approvedAt,
+      JSON.stringify(nextPayload),
+      now,
+      request.id
+    );
+  }
+
+  const rule = CATEGORY_RULES[next.category];
+  await bumpSequenceAfterApproval(rule, next, next.sequence_no);
+  const after = await getDocumentById(before.id);
+  await insertAudit(user.id, "document_record", before.id, options.auditAction || "document.edited", before, after);
+  return { domain: "document", document: after, requesterId: request ? request.requested_by_user_id : null };
+}
+
+function normalizeDocumentRecordEditInput(before, body = {}, payload = {}) {
+  const creationDate = hasOwn(body, "creation_date") || hasOwn(body, "creationDate")
+    ? normalizeDate(body.creation_date ?? body.creationDate)
+    : normalizeDate(before.creation_date);
+  const category = hasOwn(body, "category")
+    ? sanitizeCompact(body.category)
+    : sanitizeCompact(before.category);
+  const yearYy = hasOwn(body, "year_yy") || hasOwn(body, "yearYY")
+    ? normalizeYearYY(body.year_yy ?? body.yearYY, creationDate)
+    : normalizeYearYY(before.year_yy, creationDate);
+
+  const next = {
+    category,
+    company_code: hasOwn(body, "company_code") || hasOwn(body, "companyCode")
+      ? sanitizeCompact(body.company_code ?? body.companyCode)
+      : sanitizeCompact(before.company_code),
+    year_yy: yearYy,
+    sequence_no: hasOwn(body, "sequence_no") || hasOwn(body, "sequenceNo")
+      ? sanitizeDocumentSequenceNo(body.sequence_no ?? body.sequenceNo)
+      : sanitizeDocumentSequenceNo(before.sequence_no),
+    document_no: hasOwn(body, "document_no") || hasOwn(body, "documentNo")
+      ? sanitizeText(body.document_no ?? body.documentNo)
+      : sanitizeText(before.document_no),
+    revision: hasOwn(body, "revision")
+      ? normalizeRevision(body.revision)
+      : normalizeRevision(before.revision || "r00"),
+    reference_type: hasOwn(body, "reference_type") || hasOwn(body, "referenceType")
+      ? sanitizeCompact(body.reference_type ?? body.referenceType).toLowerCase()
+      : sanitizeCompact(before.reference_type || "model").toLowerCase(),
+    reference_value: hasOwn(body, "reference_value") || hasOwn(body, "referenceValue")
+      ? sanitizeText(body.reference_value ?? body.referenceValue)
+      : sanitizeText(before.reference_value),
+    document_name: hasOwn(body, "document_name") || hasOwn(body, "documentName")
+      ? sanitizeText(body.document_name ?? body.documentName)
+      : sanitizeText(before.document_name),
+    written_by: hasOwn(body, "written_by") || hasOwn(body, "writtenBy")
+      ? sanitizeText(body.written_by ?? body.writtenBy)
+      : sanitizeText(before.written_by),
+    creation_date: creationDate,
+    control_status: hasOwn(body, "control_status") || hasOwn(body, "controlStatus")
+      ? normalizeControlStatus(body.control_status ?? body.controlStatus)
+      : normalizeControlStatus(before.control_status),
+    detail_type: optionalCompactValue(
+      body.detail_type ?? body.detailType ?? body.extra_type ?? body.extraType,
+      payload.detail_type || payload.detailType || payload.extra_type || payload.extraType || ""
+    ),
+    detail_code: optionalCompactValue(
+      body.detail_code ?? body.detailCode ?? body.extra_code ?? body.extraCode,
+      payload.detail_code || payload.detailCode || payload.extra_code || payload.extraCode || ""
+    ),
+    detail_version: optionalCompactValue(
+      body.detail_version ?? body.detailVersion ?? body.version,
+      payload.detail_version || payload.detailVersion || payload.version || "1"
+    ),
+    language: optionalCompactValue(body.language, payload.language || "EN")
+  };
+
+  const rule = CATEGORY_RULES[next.category];
+  if (rule) {
+    const parsed = parseDocumentNo(rule, next, next.document_no);
+    if (parsed.valid) next.sequence_no = parsed.sequence_no || next.sequence_no || "000";
+  }
+
+  next.generated_filename = hasOwn(body, "generated_filename") || hasOwn(body, "generatedFilename")
+    ? sanitizeFilenameText(body.generated_filename ?? body.generatedFilename)
+    : (rule ? buildFilename(rule, next.document_no, next) : sanitizeFilenameText(before.generated_filename));
+
+  return next;
+}
+
+async function validateDocumentRecordEditInput(input, options = {}) {
+  const errors = validateInput(input);
+  const rule = CATEGORY_RULES[input.category];
+
+  if (!input.document_no) errors.push("Document no is required.");
+  if (!input.generated_filename) errors.push("Generated filename is required.");
+  if (input.control_status && !["controlled", "uncontrolled"].includes(input.control_status)) {
+    errors.push("Control status must be controlled or uncontrolled.");
+  }
+
+  if (rule && input.document_no) {
+    const parsed = parseDocumentNo(rule, input, input.document_no);
+    if (!parsed.valid) errors.push(parsed.error);
+  }
+
+  if (errors.length > 0) {
+    throw httpError(422, "validation_failed", errors.join(" "));
+  }
+
+  if (await isDocumentNoUnavailableForEdit(input.document_no, options)) {
+    throw httpError(409, "duplicate_document_no", `${input.document_no} is already approved or waiting for approval.`);
+  }
+  if (await isGeneratedFilenameUnavailableForEdit(input.generated_filename, options)) {
+    throw httpError(409, "duplicate_generated_filename", `${input.generated_filename} is already approved or waiting for approval.`);
+  }
+}
+
+async function isDocumentNoUnavailableForEdit(documentNo, options = {}) {
+  if (!documentNo) return false;
+  const record = await db.prepare(`
+    SELECT id
+    FROM document_records
+    WHERE document_no = ?
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(documentNo, options.ignoreDocumentId || null, options.ignoreDocumentId || null);
+  if (record) return true;
+
+  const request = await db.prepare(`
+    SELECT id
+    FROM document_requests
+    WHERE document_no = ?
+      AND status <> 'rejected'
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(documentNo, options.ignoreRequestId || null, options.ignoreRequestId || null);
+  return Boolean(request);
+}
+
+async function isGeneratedFilenameUnavailableForEdit(filename, options = {}) {
+  if (!filename) return false;
+  const normalized = filename.toUpperCase();
+  const record = await db.prepare(`
+    SELECT id
+    FROM document_records
+    WHERE UPPER(generated_filename) = ?
+      AND deleted_at IS NULL
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(normalized, options.ignoreDocumentId || null, options.ignoreDocumentId || null);
+  if (record) return true;
+
+  const request = await db.prepare(`
+    SELECT id
+    FROM document_requests
+    WHERE UPPER(generated_filename) = ?
+      AND status <> 'rejected'
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(normalized, options.ignoreRequestId || null, options.ignoreRequestId || null);
+  return Boolean(request);
+}
+
+async function getPendingDocumentEditNotificationForDocument(documentId) {
+  return await db.prepare(`
+    SELECT *
+    FROM notifications
+    WHERE type = 'document_edit_request'
+      AND entity_type = 'document_record'
+      AND entity_id = ?
+      AND status IN ('unread', 'read')
+    LIMIT 1
+  `).get(documentId);
+}
+
+async function notifyAdminsOfDocumentEditRequest(before, proposed, requester, request) {
+  const admins = await listUsersWithPermission("document_admin");
+  const label = before.document_no;
+  for (const admin of admins) {
+    await createNotification({
+      recipientUserId: admin.id,
+      sourceUserId: requester.id,
+      type: "document_edit_request",
+      entityType: "document_record",
+      entityId: before.id,
+      relatedRequestId: request ? request.id : before.request_id,
+      title: "Document edit request",
+      body: `${requester.display_name} requested changes for ${label}.`,
+      metadata: {
+        domain: "document",
+        action: "edit_request",
+        label,
+        requested_by_user_id: requester.id,
+        created_by: requester.display_name,
+        previous_document_no: before.document_no,
+        previous_generated_filename: before.generated_filename,
+        previous_document_name: before.document_name,
+        previous_reference_value: before.reference_value,
+        previous_category: before.category,
+        document_no: proposed.document_no,
+        generated_filename: proposed.generated_filename,
+        category: proposed.category,
+        company_code: proposed.company_code,
+        year_yy: proposed.year_yy,
+        sequence_no: proposed.sequence_no,
+        revision: proposed.revision,
+        reference_type: proposed.reference_type,
+        reference_value: proposed.reference_value,
+        document_name: proposed.document_name,
+        written_by: proposed.written_by,
+        creation_date: proposed.creation_date,
+        control_status: proposed.control_status,
+        detail_type: proposed.detail_type,
+        detail_code: proposed.detail_code,
+        detail_version: proposed.detail_version,
+        language: proposed.language
+      }
+    });
+  }
+}
+
+async function refreshOpenDocumentAutoPublishedNotifications(documentRecord, editor) {
+  const notifications = await db.prepare(`
+    SELECT *
+    FROM notifications
+    WHERE type = 'document_auto_published'
+      AND entity_type = 'document_record'
+      AND entity_id = ?
+      AND status IN ('unread', 'read')
+  `).all(documentRecord.id);
+
+  for (const notification of notifications) {
+    const metadata = safeParseJson(notification.metadata_json) || {};
+    metadata.label = documentRecord.document_no;
+    metadata.document_no = documentRecord.document_no;
+    metadata.generated_filename = documentRecord.generated_filename;
+    metadata.document_name = documentRecord.document_name;
+    metadata.reference_value = documentRecord.reference_value;
+    metadata.category = documentRecord.category;
+    metadata.edited_by = editor.display_name;
+
+    await db.prepare(`
+      UPDATE notifications
+      SET metadata_json = ?,
+          body = ?
+      WHERE id = ?
+    `).run(
+      JSON.stringify(metadata),
+      `${documentRecord.document_no} was edited by ${editor.display_name} and is available for review.`,
+      notification.id
+    );
+  }
+}
+
 async function updateDocumentRevision(documentId, user, options = {}) {
   // Revision updates keep the public document number stable. The current row is
   // updated in place, while the previous revision is copied to the archive.
@@ -3697,16 +4114,29 @@ async function listCurrentDocuments(options = {}) {
         WHERE rr.document_record_id = dr.id
           AND rr.status = 'pending'
         LIMIT 1
-      ) AS pending_revision_request_id`
+      ) AS pending_revision_request_id,
+      (
+        SELECT n.id
+        FROM notifications n
+        WHERE n.type = 'document_edit_request'
+          AND n.entity_type = 'document_record'
+          AND n.entity_id = dr.id
+          AND n.status IN ('unread', 'read')
+        LIMIT 1
+      ) AS pending_edit_request_id`
     : "";
 
   return await db.prepare(`
     SELECT
       dr.*,
+      req.requested_by_user_id,
+      requester.display_name AS requested_by,
       au.display_name AS checked_by,
       ru.display_name AS revision_updated_by
       ${pendingRevisionColumn}
     FROM document_records dr
+    LEFT JOIN document_requests req ON req.id = dr.request_id
+    LEFT JOIN users requester ON requester.id = req.requested_by_user_id
     LEFT JOIN users au ON au.id = dr.approved_by_user_id
     LEFT JOIN users ru ON ru.id = dr.revision_updated_by_user_id
     WHERE dr.deleted_at IS NULL
@@ -3846,7 +4276,7 @@ async function listAdminNotifications(user) {
     LEFT JOIN users au ON au.id = n.acted_by_user_id
     WHERE n.recipient_user_id = ?
       AND n.status IN ('unread', 'read')
-      AND n.type IN ('document_auto_published', 'part_auto_published', 'part_edit_request')
+      AND n.type IN ('document_auto_published', 'document_edit_request', 'part_auto_published', 'part_edit_request')
     ORDER BY n.created_at ASC, n.id ASC
     LIMIT 100
   `).all(user.id);
@@ -3903,13 +4333,18 @@ async function adminEditNotification(notificationId, user, body) {
 async function adminRejectNotification(notificationId, user, reason) {
   return await db.transaction(async () => {
     const notification = await getAdminReviewNotification(notificationId, user);
-    if (notification.entity_type !== "part_record") {
-      throw httpError(422, "unsupported_notification", "Only part review notifications can be rejected here.");
+    let result = null;
+    if (notification.entity_type === "document_record") {
+      result = notification.type === "document_auto_published"
+        ? await rejectAutoPublishedDocumentNotification(notification, user, reason)
+        : await rejectDocumentEditNotification(notification, user, reason);
+    } else if (notification.entity_type === "part_record") {
+      result = notification.type === "part_auto_published"
+        ? await rejectAutoPublishedPartNotification(notification, user, reason)
+        : await rejectPartEditNotification(notification, user, reason);
+    } else {
+      throw httpError(422, "unsupported_notification", "This notification cannot be rejected here.");
     }
-
-    const result = notification.type === "part_auto_published"
-      ? await rejectAutoPublishedPartNotification(notification, user, reason)
-      : await rejectPartEditNotification(notification, user, reason);
 
     await completeRelatedReviewNotifications(notification, user);
     await notifyRequesterOfAdminReview(notification, user, result, "reject");
@@ -3944,6 +4379,10 @@ async function getAdminReviewNotification(notificationId, user) {
 }
 
 async function markDocumentNotificationOkay(notification, user) {
+  if (notification.type === "document_edit_request") {
+    return await applyDocumentEditNotification(notification, user, null, "document.edit_request.approved");
+  }
+
   const before = await getDocumentById(notification.entity_id);
   if (!before) throw httpError(404, "not_found", "Document record not found.");
   const request = before.request_id ? await getRequestById(before.request_id) : null;
@@ -4004,89 +4443,44 @@ async function markPartNotificationOkay(notification, user) {
 }
 
 async function editDocumentFromNotification(notification, user, body) {
-  const before = await getDocumentById(notification.entity_id);
-  if (!before) throw httpError(404, "not_found", "Document record not found.");
-  const request = before.request_id ? await getRequestById(before.request_id) : null;
-  const rule = CATEGORY_RULES[before.category];
-  if (!rule || !rule.implemented) throw httpError(422, "not_implemented", `${before.category} document edit is not implemented.`);
-
-  const hasDocumentName = hasOwn(body, "document_name") || hasOwn(body, "documentName");
-  const hasReferenceValue = hasOwn(body, "reference_value") || hasOwn(body, "referenceValue");
-  const nextDocumentName = hasDocumentName
-    ? sanitizeText(body.document_name ?? body.documentName)
-    : before.document_name;
-  const nextReferenceValue = hasReferenceValue
-    ? sanitizeText(body.reference_value ?? body.referenceValue)
-    : before.reference_value;
-
-  if (!nextDocumentName) throw httpError(422, "validation_failed", "Document name is required.");
-  if (hasReferenceValue && nextReferenceValue !== before.reference_value && !canEditDocumentReferenceValue(before)) {
-    throw httpError(422, "validation_failed", `${before.category} reference is part of the generated number and cannot be changed from a notification.`);
-  }
-  if (["D", "R", "MD", "MR", "EC", "QMS", "SOP", "MARKETING"].includes(before.category) && !nextReferenceValue) {
-    throw httpError(422, "validation_failed", "Reference value is required.");
-  }
-
-  const payload = request ? (safeParseJson(request.payload_json) || {}) : {};
-  const nextInput = normalizeRequestInput({
-    ...payload,
-    category: before.category,
-    company_code: before.company_code,
-    year_yy: before.year_yy,
-    revision: before.revision,
-    document_no: before.document_no,
-    reference_type: before.reference_type,
-    reference_value: nextReferenceValue,
-    document_name: nextDocumentName,
-    written_by: before.written_by,
-    creation_date: before.creation_date,
-    control_status: before.control_status
-  }, { display_name: before.written_by });
-  const nextFilename = buildFilename(rule, before.document_no, nextInput);
-  const now = nowIso();
-
-  await db.prepare(`
-    UPDATE document_records
-    SET document_name = ?,
-        reference_value = ?,
-        generated_filename = ?,
-        approved_by_user_id = ?,
-        approved_at = ?
-    WHERE id = ?
-  `).run(nextDocumentName, nextReferenceValue, nextFilename, user.id, now, before.id);
-
-  if (request) {
-    payload.document_name = nextDocumentName;
-    payload.reference_value = nextReferenceValue;
-    await db.prepare(`
-      UPDATE document_requests
-      SET document_name = ?,
-          reference_value = ?,
-          generated_filename = ?,
-          approved_by_user_id = ?,
-          approved_at = ?,
-          payload_json = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).run(
-      nextDocumentName,
-      nextReferenceValue,
-      nextFilename,
-      user.id,
-      now,
-      JSON.stringify(payload),
-      now,
-      request.id
-    );
-  }
-
-  const after = await getDocumentById(before.id);
-  await insertAudit(user.id, "document_record", before.id, "document.notification_edited", before, after);
-  return { domain: "document", document: after, requesterId: request ? request.requested_by_user_id : notification.source_user_id };
+  return await applyDocumentEditNotification(notification, user, body, "document.notification_edited");
 }
 
 async function editPartFromNotification(notification, user, body) {
   return await applyPartEditNotification(notification, user, body, "part.notification_edited");
+}
+
+async function applyDocumentEditNotification(notification, user, body = null, auditAction = "document.notification_edited") {
+  const metadata = safeParseJson(notification.metadata_json) || {};
+  const editBody = body || {
+    category: metadata.category,
+    company_code: metadata.company_code,
+    year_yy: metadata.year_yy,
+    sequence_no: metadata.sequence_no,
+    document_no: metadata.document_no,
+    revision: metadata.revision,
+    reference_type: metadata.reference_type,
+    reference_value: metadata.reference_value,
+    document_name: metadata.document_name,
+    written_by: metadata.written_by,
+    creation_date: metadata.creation_date,
+    control_status: metadata.control_status,
+    generated_filename: metadata.generated_filename,
+    detail_type: metadata.detail_type,
+    detail_code: metadata.detail_code,
+    detail_version: metadata.detail_version,
+    language: metadata.language
+  };
+
+  const result = await updateDocumentRecordDetails(notification.entity_id, user, editBody, {
+    reviewedByAdmin: true,
+    auditAction
+  });
+
+  return {
+    ...result,
+    requesterId: metadata.requested_by_user_id || result.requesterId || notification.source_user_id
+  };
 }
 
 async function applyPartEditNotification(notification, user, body = null, auditAction = "part.notification_edited") {
@@ -4112,6 +4506,83 @@ async function applyPartEditNotification(notification, user, body = null, auditA
   return {
     ...result,
     requesterId: metadata.requested_by_user_id || result.requesterId || notification.source_user_id
+  };
+}
+
+async function rejectAutoPublishedDocumentNotification(notification, user, reason) {
+  const before = await getDocumentById(notification.entity_id);
+  if (!before) throw httpError(404, "not_found", "Document record not found.");
+  const request = before.request_id ? await getRequestById(before.request_id) : null;
+  const now = nowIso();
+  const cleanReason = sanitizeText(reason || "Rejected by Document List Admin.");
+
+  await db.prepare(`
+    UPDATE document_revision_requests
+    SET status = 'rejected',
+        reject_reason = 'Source document was rejected.',
+        decided_by_user_id = ?,
+        decided_at = ?,
+        updated_at = ?
+    WHERE document_record_id = ?
+      AND status = 'pending'
+  `).run(user.id, now, now, before.id);
+
+  await db.prepare(`
+    UPDATE document_records
+    SET deleted_at = ?,
+        deleted_by_user_id = ?
+    WHERE id = ?
+      AND deleted_at IS NULL
+  `).run(now, user.id, before.id);
+
+  if (request) {
+    await db.prepare(`
+      UPDATE document_requests
+      SET status = 'rejected',
+          reject_reason = ?,
+          approved_by_user_id = ?,
+          approved_at = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(cleanReason, user.id, now, now, request.id);
+  }
+
+  const after = {
+    ...before,
+    deleted_at: now,
+    deleted_by_user_id: user.id,
+    deleted_by: user.display_name
+  };
+  await insertDeletedItem("document", before.id, before.document_no, before, user, now);
+  await insertAudit(user.id, "document_record", before.id, "document.notification_rejected", before, after);
+
+  return {
+    domain: "document",
+    document: before,
+    requesterId: request ? request.requested_by_user_id : notification.source_user_id,
+    reason: cleanReason
+  };
+}
+
+async function rejectDocumentEditNotification(notification, user, reason) {
+  if (notification.type !== "document_edit_request") {
+    throw httpError(422, "unsupported_notification", "This document notification cannot be rejected.");
+  }
+  const documentRecord = await getDocumentById(notification.entity_id);
+  if (!documentRecord) throw httpError(404, "not_found", "Document record not found.");
+  const metadata = safeParseJson(notification.metadata_json) || {};
+  const cleanReason = sanitizeText(reason || "Rejected by Document List Admin.");
+
+  await insertAudit(user.id, "document_record", documentRecord.id, "document.edit_request.rejected", metadata, {
+    document_id: documentRecord.id,
+    reason: cleanReason
+  });
+
+  return {
+    domain: "document",
+    document: documentRecord,
+    requesterId: metadata.requested_by_user_id || notification.source_user_id,
+    reason: cleanReason
   };
 }
 
@@ -4221,7 +4692,15 @@ async function notifyAdminsOfAutoPublished(domain, requester, request, record) {
           generated_filename: record.generated_filename,
           document_name: record.document_name,
           reference_value: record.reference_value,
-          category: record.category
+          category: record.category,
+          company_code: record.company_code,
+          year_yy: record.year_yy,
+          sequence_no: record.sequence_no,
+          revision: record.revision,
+          reference_type: record.reference_type,
+          written_by: record.written_by,
+          creation_date: record.creation_date,
+          control_status: record.control_status
         } : {
           part_number: record.part_number,
           part_name: record.part_name,
@@ -4500,7 +4979,7 @@ async function getAdminTaskSummary(user) {
     FROM notifications
     WHERE recipient_user_id = ?
       AND status IN ('unread', 'read')
-      AND type IN ('document_auto_published', 'part_auto_published', 'part_edit_request')
+      AND type IN ('document_auto_published', 'document_edit_request', 'part_auto_published', 'part_edit_request')
   `).get(user.id)).count || 0);
 
   return {
@@ -4941,8 +5420,33 @@ function sanitizeText(value) {
     .trim();
 }
 
+function sanitizeFilenameText(value) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function sanitizeCompact(value) {
   return sanitizeText(value).replace(/\s+/g, "").toUpperCase();
+}
+
+function optionalCompactValue(value, fallback = "") {
+  const compact = sanitizeCompact(value);
+  return compact || sanitizeCompact(fallback);
+}
+
+function normalizeYearYY(value, creationDate = todayDate()) {
+  const text = String(value || "").trim();
+  if (/^\d{4}$/.test(text)) return text.slice(2);
+  if (/^\d{1,2}$/.test(text)) return text.padStart(2, "0");
+  return String(creationDate || todayDate()).slice(2, 4);
+}
+
+function sanitizeDocumentSequenceNo(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "000";
+  return digits.padStart(3, "0").slice(-3);
 }
 
 function normalizeRevision(value) {

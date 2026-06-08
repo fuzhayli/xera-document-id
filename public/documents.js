@@ -52,6 +52,28 @@ const elements = {
   closeDocumentActionBtn: document.getElementById("closeDocumentActionBtn"),
   documentActionTitle: document.getElementById("documentActionTitle"),
   documentActionMeta: document.getElementById("documentActionMeta"),
+  documentEditBtn: document.getElementById("documentEditBtn"),
+  documentEditForm: document.getElementById("documentEditForm"),
+  documentEditMessage: document.getElementById("documentEditMessage"),
+  documentEditCategory: document.getElementById("documentEditCategory"),
+  documentEditCompanyCode: document.getElementById("documentEditCompanyCode"),
+  documentEditYearYy: document.getElementById("documentEditYearYy"),
+  documentEditSequenceNo: document.getElementById("documentEditSequenceNo"),
+  documentEditRevision: document.getElementById("documentEditRevision"),
+  documentEditDocumentNo: document.getElementById("documentEditDocumentNo"),
+  documentEditGeneratedFilename: document.getElementById("documentEditGeneratedFilename"),
+  documentEditReferenceType: document.getElementById("documentEditReferenceType"),
+  documentEditReferenceValue: document.getElementById("documentEditReferenceValue"),
+  documentEditDocumentName: document.getElementById("documentEditDocumentName"),
+  documentEditWrittenBy: document.getElementById("documentEditWrittenBy"),
+  documentEditCreationDate: document.getElementById("documentEditCreationDate"),
+  documentEditControlStatus: document.getElementById("documentEditControlStatus"),
+  documentEditDetailType: document.getElementById("documentEditDetailType"),
+  documentEditDetailCode: document.getElementById("documentEditDetailCode"),
+  documentEditDetailVersion: document.getElementById("documentEditDetailVersion"),
+  documentEditLanguage: document.getElementById("documentEditLanguage"),
+  cancelDocumentEditBtn: document.getElementById("cancelDocumentEditBtn"),
+  saveDocumentEditBtn: document.getElementById("saveDocumentEditBtn"),
   documentRevisionRequestBtn: document.getElementById("documentRevisionRequestBtn"),
   documentDeleteBtn: document.getElementById("documentDeleteBtn"),
   documentDeleteConfirm: document.getElementById("documentDeleteConfirm"),
@@ -77,6 +99,9 @@ async function init() {
   elements.requestModalBackdrop.addEventListener("click", closeRequestModal);
   elements.closeDocumentActionBtn.addEventListener("click", closeDocumentActionModal);
   elements.documentActionBackdrop.addEventListener("click", closeDocumentActionModal);
+  elements.documentEditBtn.addEventListener("click", showDocumentEditForm);
+  elements.documentEditForm.addEventListener("submit", submitDocumentEdit);
+  elements.cancelDocumentEditBtn.addEventListener("click", hideDocumentEditForm);
   elements.documentRevisionRequestBtn.addEventListener("click", submitSelectedRevisionRequest);
   elements.documentDeleteBtn.addEventListener("click", showDocumentDeleteConfirm);
   elements.cancelDocumentDeleteBtn.addEventListener("click", hideDocumentDeleteConfirm);
@@ -195,9 +220,14 @@ async function handleDocumentAction(event) {
 function openDocumentActionModal(documentRecord) {
   state.selectedDocument = documentRecord;
   hideDocumentDeleteConfirm();
+  hideDocumentEditForm();
   elements.documentActionTitle.textContent = documentRecord.document_no || "Document Actions";
   elements.documentActionMeta.textContent = documentRecord.document_name || "Choose an action for this document.";
 
+  const canEdit = canEditDocument(documentRecord);
+  elements.documentEditBtn.classList.toggle("hidden", !canEdit);
+  elements.documentEditBtn.disabled = Boolean(documentRecord.pending_edit_request_id) && !Auth.hasPermission(state.currentUser, "document_admin");
+  elements.documentEditBtn.textContent = elements.documentEditBtn.disabled ? "Edit Pending" : "Edit";
   const canRevise = canRequestRevision(documentRecord);
   elements.documentRevisionRequestBtn.classList.toggle("hidden", !canRevise);
   elements.documentRevisionRequestBtn.disabled = Boolean(documentRecord.pending_revision_request_id);
@@ -215,6 +245,115 @@ function closeDocumentActionModal() {
   document.body.classList.remove("modal-open");
   state.selectedDocument = null;
   hideDocumentDeleteConfirm();
+  hideDocumentEditForm();
+}
+
+function canEditDocument(documentRecord) {
+  if (Auth.hasPermission(state.currentUser, "document_admin")) return true;
+  if (!state.currentUser || !Auth.getToken()) return false;
+  return Number(documentRecord.requested_by_user_id) === Number(state.currentUser.id);
+}
+
+function showDocumentEditForm() {
+  const documentRecord = state.selectedDocument;
+  if (!documentRecord) return;
+  hideDocumentDeleteConfirm();
+  hideDocumentEditMessage();
+  fillDocumentEditForm(documentRecord);
+  elements.documentEditForm.classList.remove("hidden");
+}
+
+function hideDocumentEditForm() {
+  elements.documentEditForm.classList.add("hidden");
+  elements.saveDocumentEditBtn.disabled = false;
+  hideDocumentEditMessage();
+}
+
+function fillDocumentEditForm(documentRecord) {
+  elements.documentEditCategory.value = documentRecord.category || "D";
+  elements.documentEditCompanyCode.value = documentRecord.company_code || "X";
+  elements.documentEditYearYy.value = documentRecord.year_yy || "";
+  elements.documentEditSequenceNo.value = documentRecord.sequence_no || "";
+  elements.documentEditRevision.value = documentRecord.revision || "";
+  elements.documentEditDocumentNo.value = documentRecord.document_no || "";
+  elements.documentEditGeneratedFilename.value = documentRecord.generated_filename || "";
+  elements.documentEditReferenceType.value = documentRecord.reference_type || "model";
+  elements.documentEditReferenceValue.value = documentRecord.reference_value || "";
+  elements.documentEditDocumentName.value = documentRecord.document_name || "";
+  elements.documentEditWrittenBy.value = documentRecord.written_by || "";
+  elements.documentEditCreationDate.value = documentRecord.creation_date || "";
+  elements.documentEditControlStatus.value = documentRecord.control_status || "controlled";
+  elements.documentEditDetailType.value = documentRecord.detail_type || "";
+  elements.documentEditDetailCode.value = documentRecord.detail_code || "";
+  elements.documentEditDetailVersion.value = documentRecord.detail_version || "";
+  elements.documentEditLanguage.value = documentRecord.language || "";
+}
+
+async function submitDocumentEdit(event) {
+  event.preventDefault();
+  const documentRecord = state.selectedDocument;
+  if (!documentRecord) return;
+
+  const body = collectDocumentEditBody(documentRecord);
+  if (!body.document_no || !body.document_name || !body.reference_value) {
+    showDocumentEditMessage("Document no, document name and reference are required.", "error");
+    return;
+  }
+
+  const isAdmin = Auth.hasPermission(state.currentUser, "document_admin");
+  const endpoint = isAdmin ? `/api/admin/documents/${documentRecord.id}/edit` : `/api/documents/${documentRecord.id}/edit`;
+  elements.saveDocumentEditBtn.disabled = true;
+
+  try {
+    const result = await apiPost(endpoint, body);
+    if (result.status === "pending_review") {
+      elements.documentState.textContent = `${documentRecord.document_no} edit request sent to Document List Admins.`;
+    } else {
+      elements.documentState.textContent = `${result.document.document_no} updated.`;
+    }
+    closeDocumentActionModal();
+    await loadDocuments();
+  } catch (error) {
+    showDocumentEditMessage(error.message, "error");
+    elements.saveDocumentEditBtn.disabled = false;
+  }
+}
+
+function collectDocumentEditBody(documentRecord) {
+  const body = {
+    category: elements.documentEditCategory.value,
+    company_code: elements.documentEditCompanyCode.value.trim(),
+    year_yy: elements.documentEditYearYy.value.trim(),
+    sequence_no: elements.documentEditSequenceNo.value.trim(),
+    revision: elements.documentEditRevision.value.trim(),
+    document_no: elements.documentEditDocumentNo.value.trim(),
+    reference_type: elements.documentEditReferenceType.value.trim(),
+    reference_value: elements.documentEditReferenceValue.value.trim(),
+    document_name: elements.documentEditDocumentName.value.trim(),
+    written_by: elements.documentEditWrittenBy.value.trim(),
+    creation_date: elements.documentEditCreationDate.value,
+    control_status: elements.documentEditControlStatus.value,
+    detail_type: elements.documentEditDetailType.value.trim(),
+    detail_code: elements.documentEditDetailCode.value.trim(),
+    detail_version: elements.documentEditDetailVersion.value.trim(),
+    language: elements.documentEditLanguage.value.trim()
+  };
+
+  const generatedFilename = elements.documentEditGeneratedFilename.value.trim();
+  if (generatedFilename !== (documentRecord.generated_filename || "")) {
+    body.generated_filename = generatedFilename;
+  }
+  return body;
+}
+
+function showDocumentEditMessage(message, type) {
+  elements.documentEditMessage.textContent = message;
+  elements.documentEditMessage.className = `message-box ${type}`;
+}
+
+function hideDocumentEditMessage() {
+  elements.documentEditMessage.textContent = "";
+  elements.documentEditMessage.className = "message-box hidden";
 }
 
 async function submitSelectedRevisionRequest() {

@@ -49,6 +49,8 @@ const elements = {
   notificationEditMessage: document.getElementById("notificationEditMessage"),
   notificationEditDocumentFields: document.getElementById("notificationEditDocumentFields"),
   notificationEditPartFields: document.getElementById("notificationEditPartFields"),
+  notificationDocumentNo: document.getElementById("notificationDocumentNo"),
+  notificationGeneratedFilename: document.getElementById("notificationGeneratedFilename"),
   notificationDocumentName: document.getElementById("notificationDocumentName"),
   notificationReferenceField: document.getElementById("notificationReferenceField"),
   notificationReferenceValue: document.getElementById("notificationReferenceValue"),
@@ -188,7 +190,12 @@ async function handleNotificationAction(event) {
     }
 
     if (action === "notification-reject") {
-      const reason = window.prompt("Reject reason", "Part code request is not accepted.");
+      const metadata = parseMetadata(notification);
+      const domain = getNotificationDomain(notification, metadata);
+      const defaultReason = domain === "document"
+        ? "Document ID request is not accepted."
+        : "Part code request is not accepted.";
+      const reason = window.prompt("Reject reason", defaultReason);
       if (reason === null) {
         button.disabled = false;
         return;
@@ -327,7 +334,7 @@ function renderNotifications(notifications) {
           <div class="action-row">
             <button class="compact-btn approve-btn" type="button" data-action="notification-okay" data-id="${notification.id}">${approveLabel}</button>
             <button class="compact-btn secondary-btn" type="button" data-action="notification-edit" data-id="${notification.id}">Edit</button>
-            ${domain === "part" ? `<button class="compact-btn reject-btn" type="button" data-action="notification-reject" data-id="${notification.id}">Reject</button>` : ""}
+            ${["document", "part"].includes(domain) ? `<button class="compact-btn reject-btn" type="button" data-action="notification-reject" data-id="${notification.id}">Reject</button>` : ""}
           </div>
         </td>
         <td>${escapeHtml(formatNotificationType(notification))}</td>
@@ -471,6 +478,8 @@ function openNotificationEditModal(notification) {
   elements.notificationEditPartFields.classList.toggle("hidden", domain !== "part");
 
   if (domain === "document") {
+    elements.notificationDocumentNo.value = metadata.document_no || "";
+    elements.notificationGeneratedFilename.value = metadata.generated_filename || "";
     elements.notificationDocumentName.value = metadata.document_name || "";
     elements.notificationReferenceValue.value = metadata.reference_value || "";
     elements.notificationReferenceField.classList.toggle("hidden", !canEditNotificationReference(metadata.category));
@@ -520,12 +529,20 @@ function collectNotificationEditBody(notification) {
   const domain = getNotificationDomain(notification, metadata);
 
   if (domain === "document") {
+    const documentNo = elements.notificationDocumentNo.value.trim();
+    const generatedFilename = elements.notificationGeneratedFilename.value.trim();
     const documentName = elements.notificationDocumentName.value.trim();
-    if (!documentName) {
-      showNotificationEditMessage("Document name is required.", "error");
+    if (!documentNo || !documentName) {
+      showNotificationEditMessage("Document no and document name are required.", "error");
       return null;
     }
-    const body = { document_name: documentName };
+    const body = {
+      document_no: documentNo,
+      document_name: documentName
+    };
+    if (generatedFilename && generatedFilename !== (metadata.generated_filename || "")) {
+      body.generated_filename = generatedFilename;
+    }
     if (canEditNotificationReference(metadata.category)) {
       body.reference_value = elements.notificationReferenceValue.value.trim();
     }
@@ -577,8 +594,9 @@ function parseMetadata(notification) {
 
 function formatNotificationType(notification) {
   const metadata = parseMetadata(notification);
+  if (notification.type === "document_edit_request" || (metadata.domain === "document" && metadata.action === "edit_request")) return "Document Edit";
+  if (notification.type === "part_edit_request" || (metadata.domain === "part" && metadata.action === "edit_request")) return "Part Edit";
   if (metadata.domain === "document" || notification.type === "document_auto_published") return "Document";
-  if (notification.type === "part_edit_request" || metadata.action === "edit_request") return "Part Edit";
   if (metadata.domain === "part" || notification.type === "part_auto_published") return "Part";
   return notification.type || "-";
 }
