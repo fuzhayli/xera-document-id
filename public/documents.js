@@ -56,19 +56,16 @@ const elements = {
   documentEditForm: document.getElementById("documentEditForm"),
   documentEditMessage: document.getElementById("documentEditMessage"),
   documentEditCategory: document.getElementById("documentEditCategory"),
-  documentEditCompanyCode: document.getElementById("documentEditCompanyCode"),
   documentEditYearYy: document.getElementById("documentEditYearYy"),
-  documentEditSequenceNo: document.getElementById("documentEditSequenceNo"),
   documentEditRevision: document.getElementById("documentEditRevision"),
   documentEditDocumentNo: document.getElementById("documentEditDocumentNo"),
   documentEditGeneratedFilename: document.getElementById("documentEditGeneratedFilename"),
-  documentEditReferenceType: document.getElementById("documentEditReferenceType"),
   documentEditReferenceValue: document.getElementById("documentEditReferenceValue"),
   documentEditDocumentName: document.getElementById("documentEditDocumentName"),
   documentEditWrittenBy: document.getElementById("documentEditWrittenBy"),
   documentEditCreationDate: document.getElementById("documentEditCreationDate"),
-  documentEditControlStatus: document.getElementById("documentEditControlStatus"),
-  documentEditLanguage: document.getElementById("documentEditLanguage"),
+  documentEditCheckedBy: document.getElementById("documentEditCheckedBy"),
+  documentEditReviewedAt: document.getElementById("documentEditReviewedAt"),
   cancelDocumentEditBtn: document.getElementById("cancelDocumentEditBtn"),
   saveDocumentEditBtn: document.getElementById("saveDocumentEditBtn"),
   documentRevisionRequestBtn: document.getElementById("documentRevisionRequestBtn"),
@@ -256,6 +253,9 @@ function showDocumentEditForm() {
   if (!documentRecord) return;
   hideDocumentDeleteConfirm();
   hideDocumentEditMessage();
+  const isAdmin = Auth.hasPermission(state.currentUser, "document_admin");
+  elements.documentEditCheckedBy.closest(".field").classList.toggle("hidden", !isAdmin);
+  elements.documentEditReviewedAt.closest(".field").classList.toggle("hidden", !isAdmin);
   fillDocumentEditForm(documentRecord);
   elements.documentEditForm.classList.remove("hidden");
 }
@@ -268,19 +268,16 @@ function hideDocumentEditForm() {
 
 function fillDocumentEditForm(documentRecord) {
   elements.documentEditCategory.value = documentRecord.category || "D";
-  elements.documentEditCompanyCode.value = documentRecord.company_code || "X";
   elements.documentEditYearYy.value = documentRecord.year_yy || "";
-  elements.documentEditSequenceNo.value = documentRecord.sequence_no || "";
   elements.documentEditRevision.value = documentRecord.revision || "";
   elements.documentEditDocumentNo.value = documentRecord.document_no || "";
   elements.documentEditGeneratedFilename.value = documentRecord.generated_filename || "";
-  elements.documentEditReferenceType.value = documentRecord.reference_type || "model";
   elements.documentEditReferenceValue.value = documentRecord.reference_value || "";
   elements.documentEditDocumentName.value = documentRecord.document_name || "";
   elements.documentEditWrittenBy.value = documentRecord.written_by || "";
   elements.documentEditCreationDate.value = documentRecord.creation_date || "";
-  elements.documentEditControlStatus.value = documentRecord.control_status || "controlled";
-  elements.documentEditLanguage.value = documentRecord.language || "";
+  elements.documentEditCheckedBy.value = documentRecord.checked_by || "";
+  elements.documentEditReviewedAt.value = toDateTimeLocalValue(documentRecord.approved_at);
 }
 
 async function submitDocumentEdit(event) {
@@ -300,12 +297,14 @@ async function submitDocumentEdit(event) {
 
   try {
     const result = await apiPost(endpoint, body);
+    const summary = formatDocumentEditSummary(documentRecord, result, body);
     if (result.status === "pending_review") {
       elements.documentState.textContent = `${documentRecord.document_no} edit request sent to Document List Admins.`;
     } else {
       elements.documentState.textContent = `${result.document.document_no} updated.`;
     }
     closeDocumentActionModal();
+    window.alert(summary);
     await loadDocuments();
   } catch (error) {
     showDocumentEditMessage(error.message, "error");
@@ -316,25 +315,80 @@ async function submitDocumentEdit(event) {
 function collectDocumentEditBody(documentRecord) {
   const body = {
     category: elements.documentEditCategory.value,
-    company_code: elements.documentEditCompanyCode.value.trim(),
     year_yy: elements.documentEditYearYy.value.trim(),
-    sequence_no: elements.documentEditSequenceNo.value.trim(),
     revision: elements.documentEditRevision.value.trim(),
     document_no: elements.documentEditDocumentNo.value.trim(),
-    reference_type: elements.documentEditReferenceType.value.trim(),
     reference_value: elements.documentEditReferenceValue.value.trim(),
     document_name: elements.documentEditDocumentName.value.trim(),
     written_by: elements.documentEditWrittenBy.value.trim(),
-    creation_date: elements.documentEditCreationDate.value,
-    control_status: elements.documentEditControlStatus.value,
-    language: elements.documentEditLanguage.value.trim()
+    creation_date: elements.documentEditCreationDate.value
   };
 
   const generatedFilename = elements.documentEditGeneratedFilename.value.trim();
-  if (generatedFilename !== (documentRecord.generated_filename || "")) {
-    body.generated_filename = generatedFilename;
+  body.generated_filename = generatedFilename;
+  if (Auth.hasPermission(state.currentUser, "document_admin")) {
+    body.checked_by = elements.documentEditCheckedBy.value.trim();
+    body.reviewed_at = elements.documentEditReviewedAt.value;
   }
   return body;
+}
+
+function formatDocumentEditSummary(before, result, body) {
+  if (result.status === "pending_review") {
+    return `Edit request sent for ${before.document_no}.\n\n${formatChangedFields([
+      ["Document No", before.document_no, body.document_no],
+      ["Category", before.category, body.category],
+      ["Year", before.year_yy, body.year_yy],
+      ["Revision", before.revision, body.revision],
+      ["Filename", before.generated_filename, body.generated_filename],
+      ["Document Name", before.document_name, body.document_name],
+      ["Reference", before.reference_value, body.reference_value],
+      ["Written By", before.written_by, body.written_by],
+      ["Creation Date", before.creation_date, body.creation_date]
+    ])}`;
+  }
+
+  const after = result.document || {};
+  return `${after.document_no || before.document_no} updated.\n\n${formatChangedFields([
+    ["Document No", before.document_no, after.document_no],
+    ["Category", before.category, after.category],
+    ["Year", before.year_yy, after.year_yy],
+    ["Revision", before.revision, after.revision],
+    ["Filename", before.generated_filename, after.generated_filename],
+    ["Document Name", before.document_name, after.document_name],
+    ["Reference", before.reference_value, after.reference_value],
+    ["Written By", before.written_by, after.written_by],
+    ["Creation Date", before.creation_date, after.creation_date],
+    ["Checked By", before.checked_by, body.checked_by || before.checked_by],
+    ["Reviewed At", formatDateTime(before.approved_at), formatDateTime(after.approved_at)]
+  ])}`;
+}
+
+function formatChangedFields(rows) {
+  const changes = rows
+    .map(([label, before, after]) => ({
+      label,
+      before: normalizeSummaryValue(before),
+      after: normalizeSummaryValue(after)
+    }))
+    .filter(change => change.before !== change.after);
+
+  if (changes.length === 0) return "No visible field changes.";
+  return changes
+    .map(change => `${change.label}: ${change.before || "-"} -> ${change.after || "-"}`)
+    .join("\n");
+}
+
+function normalizeSummaryValue(value) {
+  return String(value ?? "").trim();
+}
+
+function toDateTimeLocalValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+  return offsetDate.toISOString().slice(0, 16);
 }
 
 function showDocumentEditMessage(message, type) {

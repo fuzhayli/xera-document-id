@@ -84,11 +84,6 @@ const elements = {
   partEditBtn: document.getElementById("partEditBtn"),
   partEditForm: document.getElementById("partEditForm"),
   partEditMessage: document.getElementById("partEditMessage"),
-  partEditProjectCode: document.getElementById("partEditProjectCode"),
-  partEditMainCode: document.getElementById("partEditMainCode"),
-  partEditSequenceNo: document.getElementById("partEditSequenceNo"),
-  partEditRevisionMode: document.getElementById("partEditRevisionMode"),
-  partEditRevisionCode: document.getElementById("partEditRevisionCode"),
   partEditPartNumber: document.getElementById("partEditPartNumber"),
   partEditPartName: document.getElementById("partEditPartName"),
   partEditDescription: document.getElementById("partEditDescription"),
@@ -124,12 +119,6 @@ async function init() {
   elements.partEditBtn.addEventListener("click", showPartEditForm);
   elements.partEditForm.addEventListener("submit", submitPartEdit);
   elements.cancelPartEditBtn.addEventListener("click", hidePartEditForm);
-  [
-    elements.partEditProjectCode,
-    elements.partEditMainCode,
-    elements.partEditSequenceNo,
-    elements.partEditRevisionCode
-  ].forEach(input => input.addEventListener("input", updatePartEditPartNumber));
   elements.partRevisionRequestBtn.addEventListener("click", submitSelectedPartRevisionRequest);
   elements.partDeleteBtn.addEventListener("click", showPartDeleteConfirm);
   elements.cancelPartDeleteBtn.addEventListener("click", hidePartDeleteConfirm);
@@ -382,34 +371,17 @@ function hidePartEditForm() {
 }
 
 function fillPartEditForm(part) {
-  const parsed = parsePartNumber(part.part_number);
-  elements.partEditProjectCode.value = part.project_code || parsed.projectCode || "";
-  elements.partEditMainCode.value = part.main_code || parsed.mainCode || "";
-  elements.partEditSequenceNo.value = part.sequence_no || parsed.sequenceNo || "";
-  elements.partEditRevisionMode.value = part.revision_mode || parsed.revisionMode || "released";
-  elements.partEditRevisionCode.value = part.revision_code || parsed.revisionCode || "";
+  elements.partEditPartNumber.value = part.part_number || "";
   elements.partEditPartName.value = normalizeDisplayText(part.part_name || "");
   elements.partEditDescription.value = normalizeDisplayText(part.description || "");
   elements.partEditMainCategory.value = normalizeDisplayText(part.main_category || "");
   elements.partEditSubCategory.value = normalizeDisplayText(part.sub_category || "");
-  updatePartEditPartNumber();
-}
-
-function updatePartEditPartNumber() {
-  const projectCode = sanitizeCompactValue(elements.partEditProjectCode.value);
-  const mainCode = String(elements.partEditMainCode.value || "").replace(/[^1-9]/g, "").slice(0, 1);
-  const sequenceNo = sanitizeSequenceValue(elements.partEditSequenceNo.value);
-  const revisionCode = sanitizeCompactValue(elements.partEditRevisionCode.value);
-  elements.partEditPartNumber.value = projectCode && mainCode && sequenceNo && revisionCode
-    ? `${projectCode}-${mainCode}${sequenceNo}-${revisionCode}`
-    : "";
 }
 
 async function submitPartEdit(event) {
   event.preventDefault();
   const part = state.selectedPart;
   if (!part) return;
-  updatePartEditPartNumber();
 
   const body = collectPartEditBody();
   if (!body.part_number || !body.part_name || !body.description || !body.main_category) {
@@ -423,12 +395,14 @@ async function submitPartEdit(event) {
 
   try {
     const result = await apiPost(endpoint, body);
+    const summary = formatPartEditSummary(part, result, body);
     if (result.status === "pending_review") {
       showMessage(`${part.part_number} edit request sent to Part List Admins.`, "success");
     } else {
       showMessage(`${result.part.part_number} updated.`, "success");
     }
     closePartActionModal();
+    window.alert(summary);
     await loadData();
   } catch (error) {
     showPartEditMessage(error.message, "error");
@@ -438,17 +412,52 @@ async function submitPartEdit(event) {
 
 function collectPartEditBody() {
   return {
-    project_code: sanitizeCompactValue(elements.partEditProjectCode.value),
-    main_code: String(elements.partEditMainCode.value || "").replace(/[^1-9]/g, "").slice(0, 1),
-    sequence_no: sanitizeSequenceValue(elements.partEditSequenceNo.value),
-    revision_mode: elements.partEditRevisionMode.value,
-    revision_code: sanitizeCompactValue(elements.partEditRevisionCode.value),
     part_number: elements.partEditPartNumber.value.trim(),
     part_name: elements.partEditPartName.value.trim(),
     description: elements.partEditDescription.value.trim(),
     main_category: elements.partEditMainCategory.value.trim(),
     sub_category: elements.partEditSubCategory.value.trim()
   };
+}
+
+function formatPartEditSummary(before, result, body) {
+  if (result.status === "pending_review") {
+    return `Edit request sent for ${before.part_number}.\n\n${formatChangedFields([
+      ["Part Number", before.part_number, body.part_number],
+      ["Part Name", normalizeDisplayText(before.part_name), body.part_name],
+      ["Description", normalizeDisplayText(before.description), body.description],
+      ["Main Category", normalizeDisplayText(before.main_category), body.main_category],
+      ["Sub Category", normalizeDisplayText(before.sub_category), body.sub_category]
+    ])}`;
+  }
+
+  const after = result.part || {};
+  return `${after.part_number || before.part_number} updated.\n\n${formatChangedFields([
+    ["Part Number", before.part_number, after.part_number],
+    ["Part Name", normalizeDisplayText(before.part_name), normalizeDisplayText(after.part_name)],
+    ["Description", normalizeDisplayText(before.description), normalizeDisplayText(after.description)],
+    ["Main Category", normalizeDisplayText(before.main_category), normalizeDisplayText(after.main_category)],
+    ["Sub Category", normalizeDisplayText(before.sub_category), normalizeDisplayText(after.sub_category)]
+  ])}`;
+}
+
+function formatChangedFields(rows) {
+  const changes = rows
+    .map(([label, before, after]) => ({
+      label,
+      before: normalizeSummaryValue(before),
+      after: normalizeSummaryValue(after)
+    }))
+    .filter(change => change.before !== change.after);
+
+  if (changes.length === 0) return "No visible field changes.";
+  return changes
+    .map(change => `${change.label}: ${change.before || "-"} -> ${change.after || "-"}`)
+    .join("\n");
+}
+
+function normalizeSummaryValue(value) {
+  return String(value ?? "").trim();
 }
 
 function showPartEditMessage(message, type) {

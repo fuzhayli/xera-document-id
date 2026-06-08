@@ -545,14 +545,6 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { admin: user.display_name, items: await listDeletedItems(user, url.searchParams.get("type")) });
     }
 
-    const republishDeletedItemMatch = url.pathname.match(/^\/api\/admin\/deleted-items\/(\d+)\/republish$/);
-    if (req.method === "POST" && republishDeletedItemMatch) {
-      const user = await requireAnyAdmin(req);
-      const deletedItemId = Number(republishDeletedItemMatch[1]);
-      const result = await republishDeletedItem(deletedItemId, user);
-      return sendJson(res, 200, result);
-    }
-
     if (req.method === "GET" && url.pathname === "/api/admin/tasks/summary") {
       const user = await requireAnyAdmin(req);
       return sendJson(res, 200, { admin: user.display_name, summary: await getAdminTaskSummary(user) });
@@ -915,9 +907,7 @@ async function initializeDatabase() {
       display_key TEXT NOT NULL,
       record_json TEXT NOT NULL,
       deleted_by_user_id INTEGER NOT NULL REFERENCES users(id),
-      deleted_at TEXT NOT NULL,
-      republished_by_user_id INTEGER REFERENCES users(id),
-      republished_at TEXT
+      deleted_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS notifications (
@@ -952,13 +942,10 @@ async function initializeDatabase() {
   await ensureColumn("document_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
   await ensureColumn("part_records", "deleted_at", "TEXT");
   await ensureColumn("part_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
-  await ensureColumn("deleted_items", "republished_by_user_id", "INTEGER REFERENCES users(id)");
-  await ensureColumn("deleted_items", "republished_at", "TEXT");
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_document_records_deleted ON document_records(deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_deleted ON part_records(deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_type_deleted ON deleted_items(entity_type, deleted_at);");
-  await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_republished ON deleted_items(republished_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_project_main ON part_records(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_project_main ON part_requests(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_status ON part_requests(status);");
@@ -1819,10 +1806,13 @@ async function rejectPartRevisionRequest(requestId, user, reason) {
 }
 
 async function adminEditPartRecord(partId, user, body = {}) {
+  const before = await getPartRecordById(partId);
+  if (!before) throw httpError(404, "not_found", "Part record not found.");
   const result = await updatePartRecordDetails(partId, user, body, {
     reviewedByAdmin: true,
     auditAction: "part.admin_edited"
   });
+  await notifyPartRecordEditStakeholders(before, result.part, user);
   return { status: "updated", part: result.part };
 }
 
@@ -1869,8 +1859,12 @@ async function updatePartRecordDetails(partId, user, body = {}, options = {}) {
   });
 
   const now = nowIso();
-  const approvedByUserId = options.reviewedByAdmin ? user.id : before.approved_by_user_id;
-  const approvedAt = options.reviewedByAdmin ? now : before.approved_at;
+  const approvedByUserId = options.allowReviewFields && (hasOwn(body, "checked_by") || hasOwn(body, "checkedBy") || hasOwn(body, "approved_by_user_id") || hasOwn(body, "approvedByUserId"))
+    ? await resolveReviewUserId(body.checked_by ?? body.checkedBy ?? body.approved_by_user_id ?? body.approvedByUserId, before.approved_by_user_id)
+    : options.reviewedByAdmin ? user.id : before.approved_by_user_id;
+  const approvedAt = options.allowReviewFields && (hasOwn(body, "reviewed_at") || hasOwn(body, "reviewedAt") || hasOwn(body, "approved_at") || hasOwn(body, "approvedAt"))
+    ? normalizeDateTimeValue(body.reviewed_at ?? body.reviewedAt ?? body.approved_at ?? body.approvedAt, before.approved_at)
+    : options.reviewedByAdmin ? now : before.approved_at;
 
   await db.prepare(`
     UPDATE part_records
@@ -3194,10 +3188,14 @@ async function renameApprovedDocument(documentId, user, documentName) {
 }
 
 async function adminEditDocumentRecord(documentId, user, body = {}) {
+  const before = await getDocumentById(documentId);
+  if (!before) throw httpError(404, "not_found", "Document record not found.");
   const result = await updateDocumentRecordDetails(documentId, user, body, {
     reviewedByAdmin: true,
+    allowReviewFields: true,
     auditAction: "document.admin_edited"
   });
+  await notifyDocumentRecordEditStakeholders(before, result.document, user);
   return { status: "updated", document: result.document };
 }
 
@@ -4232,13 +4230,9 @@ async function insertDeletedItem(entityType, entityId, displayKey, record, user,
 
 async function getDeletedItemById(id) {
   const row = await db.prepare(`
-    SELECT
-      di.*,
-      u.display_name AS deleted_by,
-      ru.display_name AS republished_by
+    SELECT di.*, u.display_name AS deleted_by
     FROM deleted_items di
     LEFT JOIN users u ON u.id = di.deleted_by_user_id
-    LEFT JOIN users ru ON ru.id = di.republished_by_user_id
     WHERE di.id = ?
   `).get(id);
   return normalizeDeletedItem(row);
@@ -4254,113 +4248,14 @@ async function listDeletedItems(user, requestedType = "") {
 
   const placeholders = types.map(() => "?").join(", ");
   const rows = await db.prepare(`
-    SELECT
-      di.*,
-      u.display_name AS deleted_by,
-      ru.display_name AS republished_by
+    SELECT di.*, u.display_name AS deleted_by
     FROM deleted_items di
     LEFT JOIN users u ON u.id = di.deleted_by_user_id
-    LEFT JOIN users ru ON ru.id = di.republished_by_user_id
     WHERE di.entity_type IN (${placeholders})
-      AND di.republished_at IS NULL
     ORDER BY di.deleted_at DESC, di.id DESC
   `).all(...types);
 
   return rows.map(normalizeDeletedItem).filter(Boolean);
-}
-
-async function republishDeletedItem(deletedItemId, user) {
-  const deletedItem = await getDeletedItemById(deletedItemId);
-  if (!deletedItem) throw httpError(404, "not_found", "Deleted item not found.");
-  requireDeletedItemPermission(user, deletedItem.entity_type);
-  if (deletedItem.republished_at) {
-    throw httpError(409, "already_republished", "This deleted item has already been republished.");
-  }
-
-  const now = nowIso();
-  return await db.transaction(async () => {
-    const currentItem = await getDeletedItemById(deletedItemId);
-    if (!currentItem) throw httpError(404, "not_found", "Deleted item not found.");
-    requireDeletedItemPermission(user, currentItem.entity_type);
-    if (currentItem.republished_at) {
-      throw httpError(409, "already_republished", "This deleted item has already been republished.");
-    }
-
-    const record = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
-    if (!record) throw httpError(404, "not_found", "Original record not found.");
-    if (!record.deleted_at) {
-      throw httpError(409, "already_active", "Original record is already active.");
-    }
-
-    await restoreDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
-    await db.prepare(`
-      UPDATE deleted_items
-      SET republished_by_user_id = ?,
-          republished_at = ?
-      WHERE id = ?
-        AND republished_at IS NULL
-    `).run(user.id, now, deletedItemId);
-
-    const restoredRecord = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
-    await insertAudit(
-      user.id,
-      currentItem.entity_type === "document" ? "document_record" : "part_record",
-      currentItem.entity_id,
-      `${currentItem.entity_type}.republished`,
-      record,
-      restoredRecord
-    );
-
-    return {
-      deleted_item: await getDeletedItemById(deletedItemId),
-      [currentItem.entity_type]: restoredRecord
-    };
-  });
-}
-
-function requireDeletedItemPermission(user, entityType) {
-  const permission = entityType === "document" ? "document_admin"
-    : entityType === "part" ? "part_admin"
-      : "";
-  if (!permission || !userHasPermission(user, permission)) {
-    throw httpError(403, "forbidden", `${permissionLabel(permission)} permission is required.`);
-  }
-}
-
-async function getDeletedEntityRecord(entityType, entityId) {
-  if (entityType === "document") {
-    return await db.prepare("SELECT * FROM document_records WHERE id = ?").get(entityId);
-  }
-  if (entityType === "part") {
-    return await db.prepare("SELECT * FROM part_records WHERE id = ?").get(entityId);
-  }
-  throw httpError(400, "invalid_deleted_item_type", "Deleted item type is not supported.");
-}
-
-async function restoreDeletedEntityRecord(entityType, entityId) {
-  if (entityType === "document") {
-    await db.prepare(`
-      UPDATE document_records
-      SET deleted_at = NULL,
-          deleted_by_user_id = NULL
-      WHERE id = ?
-        AND deleted_at IS NOT NULL
-    `).run(entityId);
-    return;
-  }
-
-  if (entityType === "part") {
-    await db.prepare(`
-      UPDATE part_records
-      SET deleted_at = NULL,
-          deleted_by_user_id = NULL
-      WHERE id = ?
-        AND deleted_at IS NOT NULL
-    `).run(entityId);
-    return;
-  }
-
-  throw httpError(400, "invalid_deleted_item_type", "Deleted item type is not supported.");
 }
 
 function normalizeDeletedItem(row) {
@@ -4866,6 +4761,143 @@ async function notifyRequesterOfAdminReview(notification, admin, result, action)
   });
 }
 
+async function notifyDocumentRecordEditStakeholders(before, after, admin) {
+  const recipientIds = new Set();
+  const request = after.request_id ? await getRequestById(after.request_id) : null;
+  if (request && request.requested_by_user_id) recipientIds.add(Number(request.requested_by_user_id));
+
+  const revisionRequester = await db.prepare(`
+    SELECT requested_by_user_id
+    FROM document_revision_requests
+    WHERE document_record_id = ?
+      AND status = 'approved'
+      AND requested_by_user_id IS NOT NULL
+    ORDER BY COALESCE(decided_at, updated_at, created_at) DESC, id DESC
+    LIMIT 1
+  `).get(after.id);
+  if (revisionRequester && revisionRequester.requested_by_user_id) {
+    recipientIds.add(Number(revisionRequester.requested_by_user_id));
+  }
+
+  const beforeView = {
+    ...before,
+    checked_by: await getUserDisplayNameById(before.approved_by_user_id)
+  };
+  const afterView = {
+    ...after,
+    checked_by: await getUserDisplayNameById(after.approved_by_user_id)
+  };
+
+  await notifyRecordEditRecipients({
+    recipientIds,
+    admin,
+    domain: "document",
+    entityType: "document_record",
+    entityId: after.id,
+    relatedRequestId: after.request_id,
+    label: after.document_no || after.generated_filename,
+    before: beforeView,
+    after: afterView,
+    fields: [
+      ["Document No", "document_no"],
+      ["Category", "category"],
+      ["Year", "year_yy"],
+      ["Revision", "revision"],
+      ["Filename", "generated_filename"],
+      ["Document Name", "document_name"],
+      ["Reference", "reference_value"],
+      ["Written By", "written_by"],
+      ["Creation Date", "creation_date"],
+      ["Checked By", "checked_by"],
+      ["Reviewed At", "approved_at"]
+    ]
+  });
+}
+
+async function notifyPartRecordEditStakeholders(before, after, admin) {
+  const recipientIds = new Set();
+  if (after.requested_by_user_id) recipientIds.add(Number(after.requested_by_user_id));
+  if (after.request_id) {
+    const request = await getPartRequestById(after.request_id);
+    if (request && request.requested_by_user_id) recipientIds.add(Number(request.requested_by_user_id));
+  }
+
+  const revisionRequester = await db.prepare(`
+    SELECT requested_by_user_id
+    FROM part_revision_requests
+    WHERE part_record_id = ?
+      AND status = 'approved'
+      AND requested_by_user_id IS NOT NULL
+    ORDER BY COALESCE(decided_at, updated_at, created_at) DESC, id DESC
+    LIMIT 1
+  `).get(after.id);
+  if (revisionRequester && revisionRequester.requested_by_user_id) {
+    recipientIds.add(Number(revisionRequester.requested_by_user_id));
+  }
+
+  await notifyRecordEditRecipients({
+    recipientIds,
+    admin,
+    domain: "part",
+    entityType: "part_record",
+    entityId: after.id,
+    relatedRequestId: after.request_id,
+    label: after.part_number,
+    before,
+    after,
+    fields: [
+      ["Part Number", "part_number"],
+      ["Part Name", "part_name"],
+      ["Description", "description"],
+      ["Main Category", "main_category"],
+      ["Sub Category", "sub_category"]
+    ]
+  });
+}
+
+async function notifyRecordEditRecipients({ recipientIds, admin, domain, entityType, entityId, relatedRequestId, label, before, after, fields }) {
+  const changes = getRecordChangeSummary(before, after, fields);
+  if (changes.length === 0) return;
+
+  for (const recipientId of recipientIds) {
+    if (!recipientId || Number(recipientId) === Number(admin.id)) continue;
+    await createNotification({
+      recipientUserId: recipientId,
+      sourceUserId: admin.id,
+      type: `${domain}_record_edited`,
+      entityType,
+      entityId,
+      relatedRequestId,
+      title: `${capitalize(domain)} updated`,
+      body: `${label} was edited by ${admin.display_name}. ${formatChangeList(changes)}`,
+      metadata: {
+        domain,
+        action: "admin_edit",
+        label,
+        admin: admin.display_name,
+        changes
+      }
+    });
+  }
+}
+
+function getRecordChangeSummary(before, after, fields) {
+  return fields
+    .map(([label, key]) => ({
+      field: label,
+      before: String(before && before[key] != null ? before[key] : ""),
+      after: String(after && after[key] != null ? after[key] : "")
+    }))
+    .filter(change => change.before !== change.after);
+}
+
+function formatChangeList(changes) {
+  return changes
+    .slice(0, 4)
+    .map(change => `${change.field}: ${change.before || "-"} -> ${change.after || "-"}`)
+    .join("; ");
+}
+
 async function notifyPartRequestDecision(request, admin, decision, part = null) {
   if (!request || !request.requested_by_user_id) return;
 
@@ -4975,6 +5007,12 @@ async function getNotificationById(id) {
 async function listUsersWithPermission(permission) {
   const users = await db.prepare("SELECT * FROM users ORDER BY id ASC").all();
   return users.filter(user => userHasPermission(user, permission));
+}
+
+async function getUserDisplayNameById(userId) {
+  if (!userId) return "";
+  const user = await db.prepare("SELECT display_name FROM users WHERE id = ?").get(userId);
+  return user ? user.display_name : "";
 }
 
 function notificationResultPayload(result) {
@@ -5552,6 +5590,40 @@ function optionalCompactValue(value, fallback = "") {
   return compact || sanitizeCompact(fallback);
 }
 
+async function resolveReviewUserId(value, fallbackId) {
+  if (value == null || value === "") return fallbackId;
+  const text = sanitizeText(value);
+  const numericId = Number(text);
+  if (Number.isInteger(numericId) && numericId > 0) {
+    const user = await db.prepare("SELECT id FROM users WHERE id = ?").get(numericId);
+    if (user) return user.id;
+  }
+
+  const user = await db.prepare(`
+    SELECT id
+    FROM users
+    WHERE LOWER(display_name) = LOWER(?)
+       OR LOWER(username) = LOWER(?)
+       OR LOWER(email) = LOWER(?)
+    LIMIT 1
+  `).get(text, text, text);
+  if (!user) {
+    throw httpError(422, "validation_failed", `Checked By user '${text}' was not found.`);
+  }
+  return user.id;
+}
+
+function normalizeDateTimeValue(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  const normalized = text.length === 16 ? `${text}:00` : text;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    throw httpError(422, "validation_failed", "Reviewed At must be a valid date and time.");
+  }
+  return date.toISOString();
+}
+
 function normalizeYearYY(value, creationDate = todayDate()) {
   const text = String(value || "").trim();
   if (/^\d{4}$/.test(text)) return text.slice(2);
@@ -5742,14 +5814,10 @@ function serveStatic(res, requestPath) {
 
   const contentType = getContentType(absolutePath);
   const body = fs.readFileSync(absolutePath);
-  const headers = {
+  res.writeHead(200, {
     "content-type": contentType,
     "content-length": body.length
-  };
-  if (["text/html", "text/css", "text/javascript"].some(type => contentType.startsWith(type))) {
-    headers["cache-control"] = "no-store";
-  }
-  res.writeHead(200, headers);
+  });
   res.end(body);
 }
 
