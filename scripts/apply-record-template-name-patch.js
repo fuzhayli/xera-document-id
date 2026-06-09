@@ -2,8 +2,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
-const PATCH_TAG = "record-template-name-20260609";
+const PATCH_TAG = "record-template-name-20260609-2";
 const PATCH_MARKER = "record-template-document-name-20260609";
+const TEMPLATE_SUFFIX_REPLACEMENT = '.replace(/\\s*[-–—:_]?\\s*template(?:[_\\-\\s]?[a-z]{2})?\\s*$/i, "")';
 
 main();
 
@@ -62,11 +63,13 @@ function patchIndexHtml(source) {
 }
 
 function patchAppJs(source) {
+  source = source.replaceAll('.replace(/\\s*[-–—:]?\\s*template\\s*$/i, "")', TEMPLATE_SUFFIX_REPLACEMENT);
+  source = source.replaceAll('.replace(/s*[-–—:]?s*templates*$/i, "")', TEMPLATE_SUFFIX_REPLACEMENT);
   return appendOnce(source, PATCH_MARKER, recordTemplateNamePatch());
 }
 
 function recordTemplateNamePatch() {
-  return `
+  return String.raw`
 
 // ${PATCH_MARKER}
 (function installRecordTemplateDocumentNamePatch() {
@@ -206,7 +209,7 @@ function recordTemplateNamePatch() {
   function stripTrailingTemplateLabel(value) {
     return String(value || "")
       .trim()
-      .replace(/\s*[-–—:]?\s*template\s*$/i, "")
+      .replace(/\s*[-–—:_]?\s*template(?:[_\-\s]?[a-z]{2})?\s*$/i, "")
       .trim();
   }
 
