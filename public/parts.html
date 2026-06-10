@@ -43,7 +43,7 @@
           <button class="secondary-btn hidden" id="importBtn" type="button">Import Excel</button>
           <input type="file" id="importFileInput" accept=".xlsx" class="hidden">
           <a class="secondary-btn export-link" href="/api/parts/export.xlsx">Export Excel</a>
-          <button class="secondary-btn" id="customExportBtn" type="button">Özel Export</button>
+          <button class="secondary-btn" id="customExportBtn" type="button">Custom Export</button>
           <a class="secondary-btn" href="/parts-archive.html">Archive</a>
           <a class="secondary-btn hidden" id="deletedItemsLink" href="/deleted-items.html?type=part">Deleted Items</a>
           <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
@@ -107,10 +107,10 @@
         <button class="secondary-btn" id="clearMaterialFiltersBtn" type="button">Clear</button>
       </form>
 
-      <section class="custom-export-panel hidden" id="customExportPanel" aria-label="Special export options">
+      <section class="custom-export-panel hidden" id="customExportPanel" aria-label="Custom export options">
         <div class="panel-head compact-head">
           <div>
-            <h3>Özel Export</h3>
+            <h3>Custom Export</h3>
             <p id="customExportState">Select rows from Material List.</p>
           </div>
           <button class="secondary-btn" id="closeCustomExportBtn" type="button">Close</button>
