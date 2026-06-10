@@ -43,6 +43,7 @@
           <button class="secondary-btn hidden" id="importBtn" type="button">Import Excel</button>
           <input type="file" id="importFileInput" accept=".xlsx" class="hidden">
           <a class="secondary-btn export-link" href="/api/parts/export.xlsx">Export Excel</a>
+          <button class="secondary-btn" id="customExportBtn" type="button">Özel Export</button>
           <a class="secondary-btn" href="/parts-archive.html">Archive</a>
           <a class="secondary-btn hidden" id="deletedItemsLink" href="/deleted-items.html?type=part">Deleted Items</a>
           <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
@@ -105,6 +106,33 @@
         </label>
         <button class="secondary-btn" id="clearMaterialFiltersBtn" type="button">Clear</button>
       </form>
+
+      <section class="custom-export-panel hidden" id="customExportPanel" aria-label="Special export options">
+        <div class="panel-head compact-head">
+          <div>
+            <h3>Özel Export</h3>
+            <p id="customExportState">Select rows from Material List.</p>
+          </div>
+          <button class="secondary-btn" id="closeCustomExportBtn" type="button">Close</button>
+        </div>
+        <form class="filter-form custom-export-form" id="customExportForm">
+          <label class="field">
+            <span>Created By</span>
+            <select id="customExportCreatedBy"><option value="">All</option></select>
+          </label>
+          <label class="field">
+            <span>Start Date</span>
+            <input id="customExportStartDate" type="date">
+          </label>
+          <label class="field">
+            <span>End Date</span>
+            <input id="customExportEndDate" type="date">
+          </label>
+          <button class="secondary-btn" id="selectVisiblePartsBtn" type="button">Select Visible</button>
+          <button class="secondary-btn" id="clearSelectedPartsBtn" type="button">Clear Selection</button>
+          <button class="primary-btn" id="downloadCustomExportBtn" type="button">Export Selected</button>
+        </form>
+      </section>
 
       <form class="filter-form hardware-filter-form hidden" id="hardwareFilterForm">
         <div class="field search-field">
@@ -254,6 +282,6 @@
 
   <script src="/auth.js"></script>
   <script src="/ui.js"></script>
-  <script src="/parts.js?v=edit-modal-scroll-20260608"></script>
+  <script src="/parts.js?v=custom-export-20260610"></script>
 </body>
 </html>

@@ -325,6 +325,16 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/parts/custom-export.xlsx") {
+      const body = await readJson(req);
+      const rows = await listCustomExportPartRecords(body.part_ids || body.partIds || []);
+      const workbook = buildCustomPartsWorkbook(rows);
+      return sendBinary(res, 200, workbook, {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": `attachment; filename="xera-parts-custom-${todayDate().replaceAll("-", "")}.xlsx"`
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/parts/import") {
       const user = await requirePermission(req, "part_admin");
       const fileBuffer = await readBinary(req);
@@ -2279,6 +2289,22 @@ async function listPartRecords(options = {}) {
   `).all();
 
   return filterCurrentPartRecords(rows);
+}
+
+async function listCustomExportPartRecords(partIds) {
+  const ids = normalizeIdList(partIds);
+  if (ids.length === 0) {
+    throw httpError(422, "validation_failed", "Select at least one part for custom export.");
+  }
+
+  const selected = new Set(ids.map(String));
+  const rows = (await listPartRecords())
+    .filter(row => selected.has(String(row.id)))
+    .sort((a, b) => ids.indexOf(Number(a.id)) - ids.indexOf(Number(b.id)));
+  if (rows.length === 0) {
+    throw httpError(404, "not_found", "Selected parts were not found.");
+  }
+  return rows;
 }
 
 async function listPartArchive() {
@@ -5627,6 +5653,18 @@ function sanitizeCompact(value) {
   return sanitizeText(value).replace(/\s+/g, "").toUpperCase();
 }
 
+function normalizeIdList(value) {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[,\s;|]+/);
+  const ids = [];
+  for (const item of items) {
+    const id = Number(item);
+    if (Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 function optionalCompactValue(value, fallback = "") {
   const compact = sanitizeCompact(value);
   return compact || sanitizeCompact(fallback);
@@ -5926,6 +5964,48 @@ function buildPartsWorkbook(rows) {
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
     <sheet name="Parts" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`,
+    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+    "xl/worksheets/sheet1.xml": worksheet
+  });
+}
+
+function buildCustomPartsWorkbook(rows) {
+  const headers = [
+    "Part Number",
+    "Part Name",
+    "Description",
+    "Sub Category"
+  ];
+
+  const dataRows = rows.map(row => [
+    row.part_number,
+    row.part_name,
+    row.description,
+    row.sub_category
+  ]);
+
+  const worksheet = buildWorksheetXml([headers, ...dataRows]);
+  return zipStore({
+    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Custom Export" sheetId="1" r:id="rId1"/>
   </sheets>
 </workbook>`,
     "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

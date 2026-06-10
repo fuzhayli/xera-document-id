@@ -941,6 +941,51 @@ p {
   gap: 12px;
 }
 
+.custom-export-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.custom-export-panel.hidden {
+  display: none;
+}
+
+.compact-head {
+  margin-bottom: 0;
+  padding: 0;
+}
+
+.compact-head h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.compact-head p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.custom-export-form {
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) repeat(3, auto);
+}
+
+.custom-export-active .materials-table tbody tr {
+  cursor: pointer;
+}
+
+.materials-table tbody tr.export-selected td {
+  background: var(--success-soft);
+}
+
+.materials-table tbody tr.export-selected td:first-child {
+  box-shadow: inset 4px 0 0 var(--success);
+}
+
 .hardware-filter-form {
   grid-template-columns: minmax(340px, 1fr) minmax(180px, 300px) auto;
 }
@@ -1449,6 +1494,14 @@ table {
   min-width: max(1120px, 100%);
 }
 
+.materials-table {
+  min-width: max(1360px, 100%);
+}
+
+.hardware-reference-table {
+  min-width: max(1180px, 100%);
+}
+
 .user-table {
   min-width: 1120px;
 }
@@ -1555,10 +1608,16 @@ tbody tr:last-child td {
   overflow-wrap: anywhere;
 }
 
+.parts-table th,
 .parts-table td {
   white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.parts-table td {
+  vertical-align: top;
 }
 
 .documents-shell th:nth-child(1),
@@ -1654,6 +1713,47 @@ tbody tr:last-child td {
 .parts-table th:nth-child(6),
 .parts-table td:nth-child(6) {
   width: 150px;
+}
+
+.materials-table th:nth-child(1),
+.materials-table td:nth-child(1) {
+  width: 150px;
+}
+
+.materials-table th:nth-child(2),
+.materials-table td:nth-child(2) {
+  width: 320px;
+}
+
+.materials-table th:nth-child(3),
+.materials-table td:nth-child(3) {
+  width: 360px;
+}
+
+.materials-table th:nth-child(4),
+.materials-table td:nth-child(4) {
+  width: 260px;
+}
+
+.materials-table th:nth-child(5),
+.materials-table td:nth-child(5) {
+  width: 270px;
+}
+
+.parts-table .part-number-cell {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.parts-table .part-name-cell {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.part-name-token {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .part-request-shell .my-part-requests-panel {
@@ -2166,56 +2266,15 @@ tbody tr:last-child td {
 }
 
 .action-modal-panel {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   width: min(560px, 94vw);
   height: auto;
-  max-height: min(860px, calc(100vh - 48px));
 }
 
 .action-modal-body {
   display: grid;
   gap: 16px;
-  min-height: 0;
   padding: 22px 24px 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.deleted-action-panel {
-  width: min(640px, 94vw);
-}
-
-.deleted-detail-list {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-}
-
-.deleted-detail-list > div {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 14px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.deleted-detail-list > div:last-child {
-  border-bottom: 0;
-}
-
-.deleted-detail-list dt {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.deleted-detail-list dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
 }
 
 .delete-confirm-box {

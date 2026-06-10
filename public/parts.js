@@ -3,7 +3,9 @@ const state = {
   hardware: [],
   activeTab: "materials",
   currentUser: null,
-  selectedPart: null
+  selectedPart: null,
+  customExportOpen: false,
+  customExportSelectedIds: new Set()
 };
 
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
@@ -68,6 +70,17 @@ const elements = {
   hardwareBody: document.getElementById("hardwareBody"),
   importBtn: document.getElementById("importBtn"),
   importFileInput: document.getElementById("importFileInput"),
+  customExportBtn: document.getElementById("customExportBtn"),
+  customExportPanel: document.getElementById("customExportPanel"),
+  customExportForm: document.getElementById("customExportForm"),
+  customExportState: document.getElementById("customExportState"),
+  closeCustomExportBtn: document.getElementById("closeCustomExportBtn"),
+  customExportCreatedBy: document.getElementById("customExportCreatedBy"),
+  customExportStartDate: document.getElementById("customExportStartDate"),
+  customExportEndDate: document.getElementById("customExportEndDate"),
+  selectVisiblePartsBtn: document.getElementById("selectVisiblePartsBtn"),
+  clearSelectedPartsBtn: document.getElementById("clearSelectedPartsBtn"),
+  downloadCustomExportBtn: document.getElementById("downloadCustomExportBtn"),
   deletedItemsLink: document.getElementById("deletedItemsLink"),
   messageBox: document.getElementById("messageBox"),
   openPartRequestTopBtn: document.getElementById("openPartRequestTopBtn"),
@@ -110,6 +123,13 @@ async function init() {
   elements.hardwareFilterForm.addEventListener("change", renderHardware);
   elements.clearMaterialFiltersBtn.addEventListener("click", clearMaterialFilters);
   elements.clearHardwareFiltersBtn.addEventListener("click", clearHardwareFilters);
+  elements.customExportBtn.addEventListener("click", openCustomExportPanel);
+  elements.closeCustomExportBtn.addEventListener("click", closeCustomExportPanel);
+  elements.customExportForm.addEventListener("input", renderParts);
+  elements.customExportForm.addEventListener("change", renderParts);
+  elements.selectVisiblePartsBtn.addEventListener("click", selectVisibleParts);
+  elements.clearSelectedPartsBtn.addEventListener("click", clearSelectedParts);
+  elements.downloadCustomExportBtn.addEventListener("click", downloadCustomExport);
   elements.openPartRequestTopBtn.addEventListener("click", openPartRequestModal);
   elements.openPartRequestBtn.addEventListener("click", openPartRequestModal);
   elements.closePartRequestModalBtn.addEventListener("click", closePartRequestModal);
@@ -240,6 +260,7 @@ async function loadData() {
     state.parts = parts.parts || [];
     state.hardware = hardware.hardware || [];
     populateMaterialFilters();
+    populateCustomExportFilters();
     populateHardwareFilters();
     renderParts();
     renderHardware();
@@ -257,6 +278,7 @@ async function loadData() {
 
 function setTab(tab) {
   state.activeTab = tab;
+  if (tab !== "materials") closeCustomExportPanel();
   const showMaterials = tab === "materials";
   elements.materialsPanel.classList.toggle("hidden", !showMaterials);
   elements.hardwarePanel.classList.toggle("hidden", showMaterials);
@@ -271,6 +293,10 @@ function populateMaterialFilters() {
   populateSelect(elements.projectFilter, uniqueSorted(state.parts.map(part => part.project_code)));
   populateSelect(elements.mainFilter, uniqueSorted(state.parts.map(part => part.main_category)));
   populateSelect(elements.subFilter, uniqueSorted(state.parts.map(part => part.sub_category)));
+}
+
+function populateCustomExportFilters() {
+  populateSelect(elements.customExportCreatedBy, uniqueSorted(state.parts.map(getPartCreatedBy)));
 }
 
 function populateHardwareFilters() {
@@ -291,7 +317,10 @@ function populateSelect(select, values) {
 
 function renderParts() {
   const filtered = getFilteredParts();
-  elements.partsCount.textContent = `${filtered.length} of ${state.parts.length} records`;
+  elements.partsCount.textContent = state.customExportOpen
+    ? `${filtered.length} of ${state.parts.length} records, ${state.customExportSelectedIds.size} selected`
+    : `${filtered.length} of ${state.parts.length} records`;
+  updateCustomExportState(filtered.length);
 
   if (filtered.length === 0) {
     elements.partsBody.innerHTML = '<tr><td colspan="5" class="empty-cell">No parts</td></tr>';
@@ -299,7 +328,7 @@ function renderParts() {
   }
 
   elements.partsBody.innerHTML = filtered.map(part => `
-    <tr class="clickable-row" data-part-id="${part.id}">
+    <tr class="clickable-row ${state.customExportSelectedIds.has(Number(part.id)) ? "export-selected" : ""}" data-part-id="${part.id}">
       <td class="part-number-cell mono-cell">${escapeHtml(part.part_number)}</td>
       <td class="part-name-cell">${formatPartName(part.part_name)}</td>
       <td class="part-description-cell">${escapeHtml(normalizeDisplayText(part.description || "-"))}</td>
@@ -309,11 +338,105 @@ function renderParts() {
   `).join("");
 }
 
+function openCustomExportPanel() {
+  state.customExportOpen = true;
+  elements.customExportPanel.classList.remove("hidden");
+  elements.materialsPanel.classList.add("custom-export-active");
+  setTab("materials");
+  renderParts();
+}
+
+function closeCustomExportPanel() {
+  state.customExportOpen = false;
+  state.customExportSelectedIds.clear();
+  elements.customExportCreatedBy.value = "";
+  elements.customExportStartDate.value = "";
+  elements.customExportEndDate.value = "";
+  elements.customExportPanel.classList.add("hidden");
+  elements.materialsPanel.classList.remove("custom-export-active");
+  renderParts();
+}
+
+function toggleCustomExportSelection(partId) {
+  const id = Number(partId);
+  if (state.customExportSelectedIds.has(id)) {
+    state.customExportSelectedIds.delete(id);
+  } else {
+    state.customExportSelectedIds.add(id);
+  }
+  renderParts();
+}
+
+function selectVisibleParts() {
+  for (const part of getFilteredParts()) {
+    state.customExportSelectedIds.add(Number(part.id));
+  }
+  renderParts();
+}
+
+function clearSelectedParts() {
+  state.customExportSelectedIds.clear();
+  renderParts();
+}
+
+async function downloadCustomExport() {
+  const ids = [...state.customExportSelectedIds];
+  if (ids.length === 0) {
+    showMessage("Please select at least one part for special export.", "error");
+    return;
+  }
+
+  const originalText = elements.downloadCustomExportBtn.textContent;
+  elements.downloadCustomExportBtn.textContent = "Exporting...";
+  elements.downloadCustomExportBtn.disabled = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/parts/custom-export.xlsx`, {
+      method: "POST",
+      headers: {
+        ...Auth.authHeaders(),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ part_ids: ids })
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || "Custom export failed.");
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = getDownloadFilename(response, "xera-parts-custom.xlsx");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showMessage(`${ids.length} selected parts exported.`, "success");
+  } catch (error) {
+    showMessage(error.message, "error");
+  } finally {
+    elements.downloadCustomExportBtn.textContent = originalText;
+    elements.downloadCustomExportBtn.disabled = false;
+  }
+}
+
+function updateCustomExportState(visibleCount = getFilteredParts().length) {
+  if (!state.customExportOpen) return;
+  elements.customExportState.textContent = `${visibleCount} visible, ${state.customExportSelectedIds.size} selected.`;
+}
+
 async function handlePartAction(event) {
   const row = event.target.closest("tr[data-part-id]");
   if (!row) return;
   const part = state.parts.find(record => Number(record.id) === Number(row.dataset.partId));
   if (!part) return;
+  if (state.customExportOpen) {
+    toggleCustomExportSelection(part.id);
+    return;
+  }
   openPartActionModal(part);
 }
 
@@ -557,6 +680,9 @@ function getFilteredParts() {
   const sub = elements.subFilter.value;
   const revisionMode = elements.revisionModeFilter.value;
   const searchFields = getActiveSearchFields(MATERIAL_SEARCH_SCOPE_ID, MATERIAL_SEARCH_FIELDS);
+  const customCreatedBy = state.customExportOpen ? elements.customExportCreatedBy.value : "";
+  const customStartDate = state.customExportOpen ? elements.customExportStartDate.value : "";
+  const customEndDate = state.customExportOpen ? elements.customExportEndDate.value : "";
 
   return state.parts.filter(part => {
     if (projectName && getProjectName(part.project_code) !== projectName) return false;
@@ -564,6 +690,8 @@ function getFilteredParts() {
     if (main && part.main_category !== main) return false;
     if (sub && part.sub_category !== sub) return false;
     if (revisionMode && part.revision_mode !== revisionMode) return false;
+    if (customCreatedBy && getPartCreatedBy(part) !== customCreatedBy) return false;
+    if (!isPartInCustomExportDateRange(part, customStartDate, customEndDate)) return false;
     if (!search) return true;
     return matchesScopedSearch(part, search, searchFields, MATERIAL_SEARCH_FIELDS);
   });
@@ -610,6 +738,34 @@ function matchesScopedSearch(record, search, searchFields, searchFieldMap) {
 
 function flattenSearchValue(value) {
   return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
+}
+
+function getPartCreatedBy(part) {
+  return part.requested_by || part.checked_by || "";
+}
+
+function isPartInCustomExportDateRange(part, startDate, endDate) {
+  if (!startDate && !endDate) return true;
+  const createdDate = dateOnly(part.created_at);
+  if (!createdDate) return false;
+  if (startDate && createdDate < startDate) return false;
+  if (endDate && createdDate > endDate) return false;
+  return true;
+}
+
+function dateOnly(value) {
+  if (!value) return "";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function getDownloadFilename(response, fallback) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : fallback;
 }
 
 function parsePartNumber(partNumber) {
