@@ -129,6 +129,10 @@ const PART_REVISION_MODES = [
   { code: "design", name: "Design-stage Code", defaultRevision: "D01", pattern: "^D\\d{2}$", example: "D01" },
   { code: "change", name: "Design-change Intermediate Code", defaultRevision: "C01", pattern: "^C\\d{2}$", example: "C01" }
 ];
+const PART_REVISION_REQUEST_TYPES = [
+  { code: "minor", name: "Minor Revision" },
+  { code: "major", name: "Major Revision" }
+];
 const PART_PROJECT_CODES = PART_PROJECTS.map(project => project.code);
 const PART_MAIN_CODE_MAP = Object.fromEntries(PART_MAIN_CODES.map(mainCode => [mainCode.code, mainCode]));
 const PART_REVISION_MODE_MAP = Object.fromEntries(PART_REVISION_MODES.map(mode => [mode.code, mode]));
@@ -244,7 +248,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         projects: PART_PROJECTS,
         main_codes: PART_MAIN_CODES,
-        revision_modes: PART_REVISION_MODES
+        revision_modes: PART_REVISION_MODES,
+        revision_request_types: PART_REVISION_REQUEST_TYPES
       });
     }
 
@@ -638,7 +643,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && approvePartRevisionMatch) {
       const user = await requirePermission(req, "part_admin");
       const requestId = Number(approvePartRevisionMatch[1]);
-      const approved = await approvePartRevisionRequest(requestId, user);
+      const body = await readJson(req);
+      const approved = await approvePartRevisionRequest(requestId, user, body);
       return sendJson(res, 200, approved);
     }
 
@@ -888,6 +894,7 @@ async function initializeDatabase() {
       current_revision_code TEXT NOT NULL,
       requested_revision_code TEXT NOT NULL,
       revision_mode TEXT NOT NULL,
+      revision_type TEXT NOT NULL DEFAULT 'minor',
       request_note TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -961,6 +968,7 @@ async function initializeDatabase() {
   await ensureColumn("document_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
   await ensureColumn("part_records", "deleted_at", "TEXT");
   await ensureColumn("part_records", "deleted_by_user_id", "INTEGER REFERENCES users(id)");
+  await ensureColumn("part_revision_requests", "revision_type", "TEXT NOT NULL DEFAULT 'minor'");
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_document_records_deleted ON document_records(deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_deleted ON part_records(deleted_at);");
@@ -1687,7 +1695,8 @@ async function createPartRevisionRequest(partId, user, body = {}) {
     if (!partRecord) throw httpError(404, "not_found", "Part record not found.");
 
     const revisionMode = await assertPartRevisionUpdateAllowed(partRecord);
-    const requestedRevisionCode = incrementPartRevisionCode(partRecord.revision_code);
+    const revisionType = normalizePartRevisionRequestType(body.revision_type ?? body.revisionType ?? body.type ?? "minor");
+    const requestedRevisionCode = incrementPartRevisionCode(partRecord.revision_code, revisionType);
     const requestedPartNumber = buildPartNumberFromRecord(partRecord, requestedRevisionCode);
 
     if (await isPartNumberUnavailable(requestedPartNumber)) {
@@ -1699,9 +1708,9 @@ async function createPartRevisionRequest(partId, user, body = {}) {
       INSERT INTO part_revision_requests (
         part_record_id, requested_by_user_id, status, current_part_number,
         requested_part_number, current_revision_code, requested_revision_code,
-        revision_mode, request_note, created_at, updated_at
+        revision_mode, revision_type, request_note, created_at, updated_at
       )
-      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       partRecord.id,
       user.id,
@@ -1710,6 +1719,7 @@ async function createPartRevisionRequest(partId, user, body = {}) {
       partRecord.revision_code,
       requestedRevisionCode,
       revisionMode,
+      revisionType,
       sanitizeText(body.note || body.request_note || body.requestNote || ""),
       now,
       now
@@ -1743,7 +1753,7 @@ async function listPendingPartRevisionRequests() {
   `).all();
 }
 
-async function approvePartRevisionRequest(requestId, user) {
+async function approvePartRevisionRequest(requestId, user, body = {}) {
   return await db.transaction(async () => {
     const beforeRequest = await getPartRevisionRequestById(requestId);
     if (!beforeRequest) throw httpError(404, "not_found", "Part revision request not found.");
@@ -1755,9 +1765,13 @@ async function approvePartRevisionRequest(requestId, user) {
       throw httpError(409, "revision_changed", "Part revision has changed since this request was created.");
     }
 
-    await assertPartRevisionUpdateAllowed(partRecord, { ignoreRequestId: requestId });
-    if (await isPartNumberUnavailable(beforeRequest.requested_part_number, null, requestId)) {
-      throw httpError(409, "duplicate_part_number", `${beforeRequest.requested_part_number} is already approved or reserved.`);
+    const revisionMode = await assertPartRevisionUpdateAllowed(partRecord, { ignoreRequestId: requestId });
+    const revisionType = normalizePartRevisionRequestType(body.revision_type ?? body.revisionType ?? beforeRequest.revision_type ?? "minor");
+    const requestedRevisionCode = incrementPartRevisionCode(partRecord.revision_code, revisionType);
+    const requestedPartNumber = buildPartNumberFromRecord(partRecord, requestedRevisionCode);
+
+    if (await isPartNumberUnavailable(requestedPartNumber, null, requestId)) {
+      throw httpError(409, "duplicate_part_number", `${requestedPartNumber} is already approved or reserved.`);
     }
 
     const now = nowIso();
@@ -1772,9 +1786,9 @@ async function approvePartRevisionRequest(requestId, user) {
       partRecord.project_code,
       partRecord.main_code,
       partRecord.sequence_no,
-      beforeRequest.requested_part_number,
-      beforeRequest.requested_revision_code,
-      beforeRequest.revision_mode,
+      requestedPartNumber,
+      requestedRevisionCode,
+      revisionMode,
       partRecord.part_name,
       partRecord.description,
       partRecord.main_category,
@@ -1788,11 +1802,15 @@ async function approvePartRevisionRequest(requestId, user) {
     await db.prepare(`
       UPDATE part_revision_requests
       SET status = 'approved',
+          requested_part_number = ?,
+          requested_revision_code = ?,
+          revision_mode = ?,
+          revision_type = ?,
           decided_by_user_id = ?,
           decided_at = ?,
           updated_at = ?
       WHERE id = ?
-    `).run(user.id, now, now, requestId);
+    `).run(requestedPartNumber, requestedRevisionCode, revisionMode, revisionType, user.id, now, now, requestId);
 
     const afterRequest = await getPartRevisionRequestById(requestId);
     const part = await getPartRecordById(Number(insertResult.lastInsertRowid));
@@ -2513,17 +2531,29 @@ async function getPendingPartRevisionRequestForBase(partRecord, ignoreRequestId 
   );
 }
 
-function incrementPartRevisionCode(revisionCode) {
+function incrementPartRevisionCode(revisionCode, revisionType = "minor") {
   const code = sanitizeCompact(revisionCode);
+  const type = normalizePartRevisionRequestType(revisionType);
   if (/^D\d{2}$/.test(code)) return incrementPrefixedPartRevision(code, "D");
   if (/^C\d{2}$/.test(code)) return incrementPrefixedPartRevision(code, "C");
   if (/^\d{2}[A-Z]$/.test(code)) {
     const number = Number(code.slice(0, 2));
+    if (type === "major") {
+      if (number < 99) return `${String(number + 1).padStart(2, "0")}A`;
+      throw httpError(422, "validation_failed", "Part revision cannot be incremented.");
+    }
     const letterCode = code.charCodeAt(2);
     if (letterCode < 90) return `${String(number).padStart(2, "0")}${String.fromCharCode(letterCode + 1)}`;
     if (number < 99) return `${String(number + 1).padStart(2, "0")}A`;
   }
   throw httpError(422, "validation_failed", "Part revision cannot be incremented.");
+}
+
+function normalizePartRevisionRequestType(value) {
+  const type = String(value || "minor").trim().toLowerCase();
+  if (!type || type === "minor" || type === "min") return "minor";
+  if (type === "major" || type === "maj") return "major";
+  throw httpError(422, "validation_failed", "Part revision type must be minor or major.");
 }
 
 function incrementPrefixedPartRevision(code, prefix) {
@@ -4993,6 +5023,7 @@ async function notifyPartRevisionDecision(revisionRequest, admin, decision, part
       current_part_number: revisionRequest.current_part_number,
       requested_part_number: revisionRequest.requested_part_number,
       requested_revision_code: revisionRequest.requested_revision_code,
+      revision_type: revisionRequest.revision_type || "minor",
       reason
     }
   });

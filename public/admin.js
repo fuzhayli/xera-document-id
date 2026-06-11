@@ -222,8 +222,13 @@ async function handlePartRevisionPendingAction(event) {
 
   try {
     if (action === "approve-part-revision") {
-      const result = await apiPost(`/api/admin/parts/revision-requests/${requestId}/approve`, {});
-      showMessage(`Part revision approved: ${result.part.part_number}.`, "success");
+      const revisionType = promptPartRevisionType(button.dataset.revisionType || "minor");
+      if (revisionType === null) {
+        button.disabled = false;
+        return;
+      }
+      const result = await apiPost(`/api/admin/parts/revision-requests/${requestId}/approve`, { revision_type: revisionType });
+      showMessage(`${formatPartRevisionType(revisionType)} part revision approved: ${result.part.part_number}.`, "success");
     }
 
     if (action === "reject-part-revision") {
@@ -351,7 +356,7 @@ function renderPartRevisionPending(requests) {
   elements.partRevisionPendingCount.textContent = `${requests.length} requests`;
 
   if (requests.length === 0) {
-    elements.partRevisionPendingBody.innerHTML = '<tr><td colspan="7" class="empty-cell">No pending part revision requests</td></tr>';
+    elements.partRevisionPendingBody.innerHTML = '<tr><td colspan="8" class="empty-cell">No pending part revision requests</td></tr>';
     return;
   }
 
@@ -359,18 +364,44 @@ function renderPartRevisionPending(requests) {
     <tr>
       <td>
         <div class="action-row">
-          <button class="compact-btn approve-btn" type="button" data-action="approve-part-revision" data-id="${request.id}">Approve</button>
+          <button class="compact-btn approve-btn" type="button" data-action="approve-part-revision" data-id="${request.id}" data-revision-type="${escapeHtml(request.revision_type || "minor")}">Approve</button>
           <button class="compact-btn reject-btn" type="button" data-action="reject-part-revision" data-id="${request.id}">Reject</button>
         </div>
       </td>
       <td class="mono-cell">${escapeHtml(request.current_part_number || "-")}</td>
       <td class="mono-cell">${escapeHtml(request.current_revision_code || "-")}</td>
       <td class="mono-cell">${escapeHtml(request.requested_revision_code || "-")}</td>
+      <td>${escapeHtml(formatPartRevisionType(request.revision_type))}</td>
       <td>${escapeHtml(request.part_name || "-")}</td>
       <td>${escapeHtml(request.requested_by || "-")}</td>
       <td>${formatDateTime(request.created_at)}</td>
     </tr>
   `).join("");
+}
+
+function promptPartRevisionType(defaultType) {
+  let current = normalizePartRevisionType(defaultType) || "minor";
+  while (true) {
+    const value = window.prompt("Approve as revision type (minor or major)", current);
+    if (value === null) return null;
+
+    const normalized = normalizePartRevisionType(value);
+    if (normalized) return normalized;
+
+    window.alert("Please enter minor or major.");
+    current = value;
+  }
+}
+
+function normalizePartRevisionType(value) {
+  const type = String(value || "").trim().toLowerCase();
+  if (type === "minor" || type === "min") return "minor";
+  if (type === "major" || type === "maj") return "major";
+  return "";
+}
+
+function formatPartRevisionType(type) {
+  return normalizePartRevisionType(type) === "major" ? "Major" : "Minor";
 }
 
 function renderRevisionPending(requests) {

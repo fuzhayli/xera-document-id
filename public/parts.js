@@ -602,19 +602,47 @@ async function submitSelectedPartRevisionRequest() {
     return;
   }
 
-  const confirmed = window.confirm(`Send revision request for ${part.part_number}?`);
+  const revisionType = promptPartRevisionType("minor");
+  if (revisionType === null) return;
+
+  const confirmed = window.confirm(`Send ${formatPartRevisionType(revisionType).toLowerCase()} revision request for ${part.part_number}?`);
   if (!confirmed) return;
 
   elements.partRevisionRequestBtn.disabled = true;
   try {
-    const result = await apiPost(`/api/parts/${part.id}/revision-request`, {});
-    showMessage(`Revision request sent to Part List Admins: ${result.revision_request.current_revision_code} -> ${result.revision_request.requested_revision_code}`, "success");
+    const result = await apiPost(`/api/parts/${part.id}/revision-request`, { revision_type: revisionType });
+    showMessage(`${formatPartRevisionType(revisionType)} revision request sent to Part List Admins: ${result.revision_request.current_revision_code} -> ${result.revision_request.requested_revision_code}`, "success");
     closePartActionModal();
     await loadData();
   } catch (error) {
     showMessage(error.message, "error");
     elements.partRevisionRequestBtn.disabled = false;
   }
+}
+
+function promptPartRevisionType(defaultType) {
+  let current = defaultType || "minor";
+  while (true) {
+    const value = window.prompt("Revision type (minor or major)", current);
+    if (value === null) return null;
+
+    const normalized = normalizePartRevisionType(value);
+    if (normalized) return normalized;
+
+    window.alert("Please enter minor or major.");
+    current = value;
+  }
+}
+
+function normalizePartRevisionType(value) {
+  const type = String(value || "").trim().toLowerCase();
+  if (type === "minor" || type === "min") return "minor";
+  if (type === "major" || type === "maj") return "major";
+  return "";
+}
+
+function formatPartRevisionType(type) {
+  return normalizePartRevisionType(type) === "major" ? "Major" : "Minor";
 }
 
 function showPartDeleteConfirm() {
