@@ -162,7 +162,22 @@
           <h2 id="requestSuccessTitle">Request Submitted</h2>
           <p>Your request was auto-published and sent to admin notifications.</p>
         </div>
-        <div class="submitted-request-name" id="submittedRequestName">-</div>
+        <div class="submitted-request-details" aria-label="Submitted part details">
+          <div class="submitted-request-row">
+            <button class="copy-value-btn" type="button" data-copy-target="submittedPartNumber">Copy</button>
+            <div>
+              <span>Part Code</span>
+              <strong class="mono-cell" id="submittedPartNumber">-</strong>
+            </div>
+          </div>
+          <div class="submitted-request-row">
+            <button class="copy-value-btn" type="button" data-copy-target="submittedPartName">Copy</button>
+            <div>
+              <span>Part Name</span>
+              <strong class="mono-cell" id="submittedPartName">-</strong>
+            </div>
+          </div>
+        </div>
         <div class="success-actions">
           <button class="primary-btn" id="newRequestAfterSubmitBtn" type="button">New Request</button>
           <button class="secondary-btn" id="closeAfterSubmitBtn" type="button">Close</button>

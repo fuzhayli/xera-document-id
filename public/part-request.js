@@ -35,7 +35,8 @@ const elements = {
   partNumberPreview: document.getElementById("partNumberPreview"),
   mainCategoryPreview: document.getElementById("mainCategoryPreview"),
   requestSuccessModal: document.getElementById("requestSuccessModal"),
-  submittedRequestName: document.getElementById("submittedRequestName"),
+  submittedPartNumber: document.getElementById("submittedPartNumber"),
+  submittedPartName: document.getElementById("submittedPartName"),
   newRequestAfterSubmitBtn: document.getElementById("newRequestAfterSubmitBtn"),
   closeAfterSubmitBtn: document.getElementById("closeAfterSubmitBtn"),
   requestCount: document.getElementById("requestCount"),
@@ -60,6 +61,7 @@ async function init() {
   elements.clearBtn.addEventListener("click", clearForm);
   elements.newRequestAfterSubmitBtn.addEventListener("click", startNewRequest);
   elements.closeAfterSubmitBtn.addEventListener("click", closeRequestScreen);
+  elements.requestSuccessModal.addEventListener("click", handleSuccessModalAction);
   await refreshAll();
 }
 
@@ -280,16 +282,75 @@ function clearForm() {
 }
 
 function startNewRequest() {
-  clearForm();
+  const projectCode = elements.projectCode.value || "X101";
+  const revisionMode = elements.revisionMode.value || "released";
+  hideSuccessModal();
+  clearTextFields();
+  elements.projectCode.value = projectCode;
+  elements.mainCode.value = "2";
+  elements.revisionMode.value = revisionMode;
+  updateRevisionDefault();
+  renderReadyOptions();
+  hideMessage();
+  updatePreview();
 }
 
 function showRequestSubmitted(request) {
   const requestName = formatSubmittedPartRequestName(request);
   showMessage(`Request submitted and auto-published: ${requestName}`, "success");
-  elements.submittedRequestName.textContent = requestName;
+  elements.submittedPartNumber.textContent = request.part_number || `#${request.id}`;
+  elements.submittedPartName.textContent = request.part_name || "-";
+  resetSuccessCopyButtons();
   elements.requestSuccessModal.classList.remove("hidden");
   document.body.classList.add("modal-open");
   elements.submitBtn.disabled = true;
+}
+
+async function handleSuccessModalAction(event) {
+  const button = event.target.closest("[data-copy-target]");
+  if (!button) return;
+
+  const target = document.getElementById(button.dataset.copyTarget);
+  const value = target ? target.textContent.trim() : "";
+  if (!value || value === "-") return;
+
+  try {
+    await copyTextToClipboard(value);
+    const previousText = button.textContent;
+    button.textContent = "Copied";
+    button.disabled = true;
+    window.setTimeout(() => {
+      button.textContent = previousText;
+      button.disabled = false;
+    }, 1200);
+  } catch (error) {
+    showMessage("Copy failed. Please copy manually.", "warning");
+  }
+}
+
+async function copyTextToClipboard(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("copy_failed");
+}
+
+function resetSuccessCopyButtons() {
+  elements.requestSuccessModal.querySelectorAll("[data-copy-target]").forEach(button => {
+    button.textContent = "Copy";
+    button.disabled = false;
+  });
 }
 
 function formatSubmittedPartRequestName(request) {
@@ -525,18 +586,18 @@ function formatDateTime(value) {
 
 function normalizeDisplayText(value) {
   return String(value ?? "")
-    .replaceAll("Ä°", "I")
-    .replaceAll("Ä±", "i")
-    .replaceAll("Ä", "G")
-    .replaceAll("ÄŸ", "g")
-    .replaceAll("Ãœ", "U")
-    .replaceAll("Ã¼", "u")
-    .replaceAll("Å", "S")
-    .replaceAll("ÅŸ", "s")
-    .replaceAll("Ã–", "O")
-    .replaceAll("Ã¶", "o")
-    .replaceAll("Ã‡", "C")
-    .replaceAll("Ã§", "c");
+    .replaceAll("İ", "I")
+    .replaceAll("ı", "i")
+    .replaceAll("Ğ", "G")
+    .replaceAll("ğ", "g")
+    .replaceAll("Ü", "U")
+    .replaceAll("ü", "u")
+    .replaceAll("Ş", "S")
+    .replaceAll("ş", "s")
+    .replaceAll("Ö", "O")
+    .replaceAll("ö", "o")
+    .replaceAll("Ç", "C")
+    .replaceAll("ç", "c");
 }
 
 function uniqueSorted(values) {
