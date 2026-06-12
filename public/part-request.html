@@ -164,14 +164,24 @@
         </div>
         <div class="submitted-request-details" aria-label="Submitted part details">
           <div class="submitted-request-row">
-            <button class="copy-value-btn" type="button" data-copy-target="submittedPartNumber">Copy</button>
+            <button class="copy-value-btn" type="button" data-copy-target="submittedPartNumber" data-copy-label="Copy Part Code" aria-label="Copy Part Code" title="Copy Part Code">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+            </button>
             <div>
               <span>Part Code</span>
               <strong class="mono-cell" id="submittedPartNumber">-</strong>
             </div>
           </div>
           <div class="submitted-request-row">
-            <button class="copy-value-btn" type="button" data-copy-target="submittedPartName">Copy</button>
+            <button class="copy-value-btn" type="button" data-copy-target="submittedPartName" data-copy-label="Copy Part Name" aria-label="Copy Part Name" title="Copy Part Name">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+            </button>
             <div>
               <span>Part Name</span>
               <strong class="mono-cell" id="submittedPartName">-</strong>

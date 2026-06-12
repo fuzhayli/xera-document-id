@@ -316,11 +316,15 @@ async function handleSuccessModalAction(event) {
 
   try {
     await copyTextToClipboard(value);
-    const previousText = button.textContent;
-    button.textContent = "Copied";
+    const label = getCopyButtonLabel(button);
+    button.classList.add("copied");
+    button.setAttribute("aria-label", "Copied");
+    button.title = "Copied";
     button.disabled = true;
     window.setTimeout(() => {
-      button.textContent = previousText;
+      button.classList.remove("copied");
+      button.setAttribute("aria-label", label);
+      button.title = label;
       button.disabled = false;
     }, 1200);
   } catch (error) {
@@ -348,9 +352,16 @@ async function copyTextToClipboard(value) {
 
 function resetSuccessCopyButtons() {
   elements.requestSuccessModal.querySelectorAll("[data-copy-target]").forEach(button => {
-    button.textContent = "Copy";
+    const label = getCopyButtonLabel(button);
+    button.classList.remove("copied");
+    button.setAttribute("aria-label", label);
+    button.title = label;
     button.disabled = false;
   });
+}
+
+function getCopyButtonLabel(button) {
+  return button.dataset.copyLabel || "Copy";
 }
 
 function formatSubmittedPartRequestName(request) {

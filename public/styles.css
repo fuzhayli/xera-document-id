@@ -919,7 +919,7 @@ p {
 
 .submitted-request-row {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: 46px minmax(0, 1fr);
   align-items: stretch;
   gap: 10px;
   width: 100%;
@@ -927,14 +927,26 @@ p {
 }
 
 .copy-value-btn {
-  min-height: 48px;
-  padding: 0 12px;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  min-height: 46px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-soft);
   color: var(--text);
-  font-weight: 800;
   cursor: pointer;
+}
+
+.copy-value-btn svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .copy-value-btn:hover,
@@ -947,6 +959,12 @@ p {
 .copy-value-btn:disabled {
   cursor: default;
   opacity: .75;
+}
+
+.copy-value-btn.copied {
+  border-color: rgba(17, 130, 59, .45);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .submitted-request-row > div {
