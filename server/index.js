@@ -2436,6 +2436,10 @@ function buildPartNumber(input, sequenceNo) {
   return `${input.project_code}-${input.main_code}${sequenceNo}-${input.revision_code}`;
 }
 
+function buildPartNumberBase(projectCode, mainCode, sequenceNo) {
+  return `${sanitizeCompact(projectCode)}-${sanitizeCompact(mainCode)}${padSequence(sequenceNo)}`;
+}
+
 function buildPartNumberFromRecord(partRecord, revisionCode) {
   return `${partRecord.project_code}-${partRecord.main_code}${partRecord.sequence_no}-${revisionCode}`;
 }
@@ -2599,6 +2603,7 @@ async function getNextAvailablePartSequence(projectCode, mainCode) {
 
 function getPartSequenceMinimum(projectCode, mainCode) {
   if (projectCode === "X102" && mainCode === "2") return 100;
+  if (mainCode === "8") return 0;
   return 1;
 }
 
@@ -2621,25 +2626,37 @@ async function getMaxPartSequence(projectCode, mainCode) {
 
 async function isPartSequenceUnavailable(projectCode, mainCode, sequenceNo, ignoreRequestId = null) {
   if (!projectCode || !mainCode || !sequenceNo) return false;
+  const basePartNumber = buildPartNumberBase(projectCode, mainCode, sequenceNo);
+  const basePartNumberRevisionLike = `${basePartNumber}-%`;
   const record = await db.prepare(`
     SELECT id
     FROM part_records
-    WHERE project_code = ?
-      AND main_code = ?
-      AND sequence_no = ?
+    WHERE (
+        project_code = ?
+        AND main_code = ?
+        AND sequence_no = ?
+      )
+      OR UPPER(part_number) = ?
+      OR UPPER(part_number) LIKE ?
     LIMIT 1
-  `).get(projectCode, mainCode, sequenceNo);
+  `).get(projectCode, mainCode, sequenceNo, basePartNumber, basePartNumberRevisionLike);
   if (record) return true;
 
   const request = await db.prepare(`
     SELECT id
     FROM part_requests
-    WHERE project_code = ?
-      AND main_code = ?
-      AND sequence_no = ?
+    WHERE (
+        (
+          project_code = ?
+          AND main_code = ?
+          AND sequence_no = ?
+        )
+        OR UPPER(part_number) = ?
+        OR UPPER(part_number) LIKE ?
+      )
       AND (? IS NULL OR id <> ?)
     LIMIT 1
-  `).get(projectCode, mainCode, sequenceNo, ignoreRequestId, ignoreRequestId);
+  `).get(projectCode, mainCode, sequenceNo, basePartNumber, basePartNumberRevisionLike, ignoreRequestId, ignoreRequestId);
   return Boolean(request);
 }
 

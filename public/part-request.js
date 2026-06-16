@@ -468,7 +468,7 @@ function getPartBaseFromRow(row) {
     return { projectCode, mainCode, sequenceNo };
   }
 
-  const match = sanitizePartNumberValue(row.part_number).match(/^([A-Z0-9]+)-([1-9])(\d{3})-[A-Z0-9]+$/);
+  const match = sanitizePartNumberValue(row.part_number).match(/^([A-Z0-9]{4})-([1-9])(\d{3})(?:-[A-Z0-9]{3})?$/);
   if (!match) return null;
 
   return {
@@ -480,6 +480,7 @@ function getPartBaseFromRow(row) {
 
 function getPartSequenceMinimum(projectCode, mainCode) {
   if (projectCode === "X102" && mainCode === "2") return 100;
+  if (mainCode === "8") return 0;
   return 1;
 }
 
