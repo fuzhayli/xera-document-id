@@ -43,7 +43,7 @@ cevirir. Kaynaklar:
 | MD | Manufacturing site dynamic documents | `XMD-{YY}-{AAA}` | `XMD-26-001_GR10X-40K_Product Wastage Follow-up_r00` | Revision |
 | MR | Manufacturing site record documents | `XMR-{YY}-{AAA}` | `XMR-26-001_GR10X-40K_Final Inspection Report_20260505` | Date |
 | EC | Engineering Change documents | `XEC-{YY}{ORDER}-{TYPE}` veya `XEC-{YY}{ORDER}-{TYPE}-{AAA}` | `XEC-26A-R_GR10X-40K_Critical malfunction of motor_r00` | Revision |
-| QMS | Quality management documents | `XQM-{YY}`, `XQP-{AA}`, `XQS-{AA}-{AAA}`, `XQT-{AA}-{AAA}` | `XQP-13_Control of Manufacturing Realization_r00` | Revision |
+| QMS | Quality management documents | `XQM-{YY}`, `XQP-{AA}`, `XQS-{AA}-{NN}`, `XQT-{AA}-{NN}` | `XQP-13_Control of Manufacturing Realization_r00` | Revision |
 | MARKETING | Customer-facing marketing materials | Ayrica `R` Doc No gerekir | `XERA-OCTAVE20260508BEN` | Published date + material type + language |
 
 ## 4. Standart Dokuman Kategorileri
@@ -187,15 +187,15 @@ Number formats:
 |---|---|---|
 | Quality Manual | `XQM-{YY}` | `XQM-26` |
 | Quality Process | `XQP-{AA}` | `XQP-13` |
-| SOP / Instruction | `XQS-{AA}-{AAA}` | `XQS-13-001` |
-| Template | `XQT-{AA}-{AAA}` | `XQT-13-001` |
+| SOP / Instruction | `XQS-{AA}-{NN}` | `XQS-13-01` |
+| Template | `XQT-{AA}-{NN}` | `XQT-13-01` |
 
 Filename examples:
 
 - `XQM-26_Quality Manual_r00`
 - `XQP-13_Control of Manufacturing Realization_r00`
-- `XQS-13-001_Soldering_r00`
-- `XQT-13-001_Work Order_r00`
+- `XQS-13-01_Soldering_r00`
+- `XQT-13-01_Work Order_r00`
 
 ## 7. Marketing Material ID Kurallari
 
@@ -256,7 +256,7 @@ Initial regex candidates:
 | MD Doc No | `^XMD-\d{2}-\d{3}$` |
 | MR Doc No | `^XMR-\d{2}-\d{3}$` |
 | EC Doc No | `^XEC-\d{2}[A-Z]-(Rr|R|E|O|N)(-\d{3})?$` |
-| QMS Doc No | `^(XQM-\d{2}|XQP-\d{2}|XQS-\d{2}-\d{3}|XQT-\d{2}-\d{3})$` |
+| QMS Doc No | `^(XQM-\d{2}|XQP-\d{2}|XQS-\d{2}-\d{2}|XQT-\d{2}-\d{2})$` |
 | Revision | `^r\d{2}$` |
 | Date for filename | `^\d{8}$` plus valid calendar date |
 | UI date | `^\d{4}-\d{2}-\d{2}$` plus valid calendar date |

@@ -82,7 +82,7 @@ const CATEGORY_RULES = {
     suffixType: "revision",
     requiresSequence: true,
     implemented: true,
-    example: "XQS-13-001_Soldering_r00"
+    example: "XQS-13-01_Soldering_r00"
   },
   MARKETING: {
     code: "MARKETING",
@@ -2970,6 +2970,7 @@ async function buildPreview(input, options = {}) {
       return { valid: false, errors: [parsed.error], input };
     }
     sequenceNo = parsed.sequence_no || "000";
+    documentNo = parsed.document_no || requestedDocumentNo;
   } else {
     const usesSequence = requiresSequenceForInput(rule, input);
     sequenceNo = usesSequence
@@ -4038,7 +4039,8 @@ function parseDocumentNo(rule, input, documentNo) {
       const match = documentNo.match(/^XQT-(\d{2})-(\d{2,3})$/);
       if (!match) return { valid: false, error: `QMS template document no must look like XQT-${input.reference_value}-01.` };
       if (match[1] !== input.reference_value) return { valid: false, error: `QMS process must match ${input.reference_value}.` };
-      return { valid: true, sequence_no: match[2] };
+      const sequenceNo = formatSequenceForInput(rule, input, Number(match[2]));
+      return { valid: true, sequence_no: sequenceNo, document_no: `XQT-${input.reference_value}-${sequenceNo}` };
     }
     const match = documentNo.match(/^XQP-(\d{2})$/);
     if (!match) return { valid: false, error: `QMS process document no must look like XQP-${input.reference_value}.` };
@@ -4054,10 +4056,11 @@ function parseDocumentNo(rule, input, documentNo) {
       if (match[1] !== expectedPartCode) return { valid: false, error: `Incoming SOP part code must match ${expectedPartCode}.` };
       return { valid: true, sequence_no: "000" };
     }
-    const match = documentNo.match(/^XQS-(\d{2})-(\d{3})$/);
-    if (!match) return { valid: false, error: `SOP document no must look like XQS-${input.reference_value}-001.` };
+    const match = documentNo.match(/^XQS-(\d{2})-(\d{2,3})$/);
+    if (!match) return { valid: false, error: `SOP document no must look like XQS-${input.reference_value}-01.` };
     if (match[1] !== input.reference_value) return { valid: false, error: `SOP process must match ${input.reference_value}.` };
-    return { valid: true, sequence_no: match[2] };
+    const sequenceNo = formatSequenceForInput(rule, input, Number(match[2]));
+    return { valid: true, sequence_no: sequenceNo, document_no: `XQS-${input.reference_value}-${sequenceNo}` };
   }
 
   return { valid: false, error: "Unsupported document no format." };
@@ -4109,22 +4112,38 @@ async function getMaxSequenceForPrefix(prefix) {
 
 async function isDocumentNoUnavailable(documentNo, ignoreRequestId = null) {
   if (!documentNo) return false;
-  if (await isDocumentNoApprovedElsewhere(documentNo)) return true;
+  const equivalentDocumentNos = getEquivalentDocumentNos(documentNo);
+  if (await isDocumentNoApprovedElsewhere(equivalentDocumentNos)) return true;
+  const placeholders = equivalentDocumentNos.map(() => "?").join(", ");
   const pending = await db.prepare(`
     SELECT id
     FROM document_requests
     WHERE status = 'pending'
-      AND document_no = ?
+      AND document_no IN (${placeholders})
       AND (? IS NULL OR id <> ?)
     LIMIT 1
-  `).get(documentNo, ignoreRequestId, ignoreRequestId);
+  `).get(...equivalentDocumentNos, ignoreRequestId, ignoreRequestId);
   return Boolean(pending);
 }
 
 async function isDocumentNoApprovedElsewhere(documentNo) {
-  if (!documentNo) return false;
-  const row = await db.prepare("SELECT id FROM document_records WHERE document_no = ? LIMIT 1").get(documentNo);
+  const documentNos = Array.isArray(documentNo) ? documentNo.filter(Boolean) : [documentNo].filter(Boolean);
+  if (documentNos.length === 0) return false;
+  const placeholders = documentNos.map(() => "?").join(", ");
+  const row = await db.prepare(`SELECT id FROM document_records WHERE document_no IN (${placeholders}) LIMIT 1`).get(...documentNos);
   return Boolean(row);
+}
+
+function getEquivalentDocumentNos(documentNo) {
+  const normalized = sanitizeText(documentNo);
+  const match = normalized.match(/^(XQ[TS])-(\d{2})-(\d{2,3})$/);
+  if (!match) return [normalized].filter(Boolean);
+
+  const sequence = Number(match[3]);
+  if (!Number.isInteger(sequence)) return [normalized];
+  const twoDigit = `${match[1]}-${match[2]}-${String(sequence).padStart(2, "0")}`;
+  const threeDigit = `${match[1]}-${match[2]}-${String(sequence).padStart(3, "0")}`;
+  return [...new Set([normalized, twoDigit, threeDigit])];
 }
 
 async function bumpSequenceAfterApproval(rule, input, sequenceNo) {
@@ -4182,8 +4201,15 @@ function normalizeMarketingMaterialType(value) {
 }
 
 function formatSequenceForInput(rule, input, value) {
-  const width = rule.code === "QMS" && (input.detail_type || "QP") === "QT" ? 2 : 3;
+  const width = usesTwoDigitQmsSequence(rule, input) ? 2 : 3;
   return String(value).padStart(width, "0");
+}
+
+function usesTwoDigitQmsSequence(rule, input) {
+  if (!rule) return false;
+  if (rule.code === "QMS") return (input.detail_type || "QP") === "QT";
+  if (rule.code === "SOP") return !isIncomingSop(input);
+  return false;
 }
 
 async function getRequestById(id) {
