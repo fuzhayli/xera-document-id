@@ -1,7 +1,8 @@
 const state = {
   items: [],
   selectedItem: null,
-  currentUser: null
+  currentUser: null,
+  view: "deleted"
 };
 const DELETED_SEARCH_SCOPE_ID = "deletedSearchScope";
 const DELETED_SEARCH_FIELDS = {
@@ -10,7 +11,9 @@ const DELETED_SEARCH_FIELDS = {
   name: item => getRecordName(item, item.record || {}),
   details: item => getRecordDetails(item, item.record || {}),
   deleted_by: item => item.deleted_by,
-  deleted_at: item => [item.deleted_at, item.deleted_at ? formatDateTime(item.deleted_at) : ""]
+  deleted_at: item => [item.deleted_at, item.deleted_at ? formatDateTime(item.deleted_at) : ""],
+  released_by: item => item.released_for_reuse_by,
+  released_at: item => [item.released_for_reuse_at, item.released_for_reuse_at ? formatDateTime(item.released_for_reuse_at) : ""]
 };
 
 const elements = {
@@ -18,20 +21,22 @@ const elements = {
   currentAdminName: document.getElementById("currentAdminName"),
   deletedState: document.getElementById("deletedState"),
   deletedCount: document.getElementById("deletedCount"),
-  releasedPartCodesLink: document.getElementById("releasedPartCodesLink"),
+  deletedViewTabs: document.getElementById("deletedViewTabs"),
   refreshBtn: document.getElementById("refreshBtn"),
   filterForm: document.getElementById("filterForm"),
   searchInput: document.getElementById("searchInput"),
   typeFilter: document.getElementById("typeFilter"),
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
   messageBox: document.getElementById("messageBox"),
+  deletedTableTitle: document.getElementById("deletedTableTitle"),
+  deletedHeadRow: document.getElementById("deletedHeadRow"),
   deletedBody: document.getElementById("deletedBody"),
   deletedActionModal: document.getElementById("deletedActionModal"),
   deletedActionBackdrop: document.getElementById("deletedActionBackdrop"),
   closeDeletedActionBtn: document.getElementById("closeDeletedActionBtn"),
   cancelDeletedActionBtn: document.getElementById("cancelDeletedActionBtn"),
   republishDeletedItemBtn: document.getElementById("republishDeletedItemBtn"),
-  releasePartCodeBtn: document.getElementById("releasePartCodeBtn"),
+  releaseItemForReuseBtn: document.getElementById("releaseItemForReuseBtn"),
   deletedActionTitle: document.getElementById("deletedActionTitle"),
   deletedActionMeta: document.getElementById("deletedActionMeta"),
   deletedActionDetails: document.getElementById("deletedActionDetails")
@@ -49,10 +54,9 @@ async function init() {
 
   state.currentUser = user;
   elements.currentAdminName.textContent = `${user.display_name} (${Auth.roleLabel(user)})`;
-  if (Auth.hasPermission(user, "part_admin")) {
-    elements.releasedPartCodesLink.classList.remove("hidden");
-  }
+  state.view = new URLSearchParams(window.location.search).get("view") === "released" ? "released" : "deleted";
   populateTypeFilter(user);
+  elements.deletedViewTabs.addEventListener("click", handleViewTabClick);
   elements.refreshBtn.addEventListener("click", loadDeletedItems);
   elements.filterForm.addEventListener("input", renderDeletedItems);
   elements.filterForm.addEventListener("change", renderDeletedItems);
@@ -64,7 +68,7 @@ async function init() {
   elements.closeDeletedActionBtn.addEventListener("click", closeDeletedActionModal);
   elements.cancelDeletedActionBtn.addEventListener("click", closeDeletedActionModal);
   elements.republishDeletedItemBtn.addEventListener("click", republishSelectedDeletedItem);
-  elements.releasePartCodeBtn.addEventListener("click", releaseSelectedPartCode);
+  elements.releaseItemForReuseBtn.addEventListener("click", releaseSelectedItemForReuse);
   await loadDeletedItems();
 }
 
@@ -76,18 +80,28 @@ function populateTypeFilter(user) {
   if (Auth.hasPermission(user, "part_admin")) {
     elements.typeFilter.insertAdjacentHTML("beforeend", '<option value="part">Parts</option>');
   }
+  elements.typeFilter.value = "";
+}
 
-  const requestedType = new URLSearchParams(window.location.search).get("type") || "";
-  if ([...elements.typeFilter.options].some(option => option.value === requestedType)) {
-    elements.typeFilter.value = requestedType;
-  }
+function handleViewTabClick(event) {
+  const button = event.target.closest("[data-deleted-view]");
+  if (!button) return;
+  const nextView = button.dataset.deletedView === "released" ? "released" : "deleted";
+  if (nextView === state.view) return;
+  state.view = nextView;
+  state.selectedItem = null;
+  showMessage("", "hidden");
+  loadDeletedItems();
 }
 
 async function loadDeletedItems() {
   elements.deletedState.textContent = "Loading";
 
   try {
-    const data = await apiGet("/api/admin/deleted-items");
+    updateViewTabs();
+    const data = await apiGet(state.view === "released"
+      ? "/api/admin/deleted-items/released-items"
+      : "/api/admin/deleted-items");
     state.items = data.items || [];
     renderDeletedItems();
     setApiStatus(true);
@@ -101,11 +115,15 @@ async function loadDeletedItems() {
 }
 
 function renderDeletedItems() {
+  updateViewTabs();
+  renderTableHead();
   const filtered = getFilteredItems();
+  elements.deletedTableTitle.textContent = state.view === "released" ? "Released Records" : "Deleted Records";
   elements.deletedCount.textContent = `${filtered.length} of ${state.items.length} records`;
 
   if (filtered.length === 0) {
-    elements.deletedBody.innerHTML = '<tr><td colspan="6" class="empty-cell">No deleted records</td></tr>';
+    const emptyLabel = state.view === "released" ? "No released records" : "No deleted records";
+    elements.deletedBody.innerHTML = `<tr><td colspan="${state.view === "released" ? 8 : 6}" class="empty-cell">${emptyLabel}</td></tr>`;
     return;
   }
 
@@ -120,9 +138,39 @@ function renderDeletedItems() {
         <td>${escapeHtml(getRecordDetails(item, record))}</td>
         <td>${escapeHtml(item.deleted_by || "-")}</td>
         <td>${formatDateTime(item.deleted_at)}</td>
+        ${state.view === "released" ? `
+          <td>${escapeHtml(item.released_for_reuse_by || "-")}</td>
+          <td>${formatDateTime(item.released_for_reuse_at)}</td>
+        ` : ""}
       </tr>
     `;
   }).join("");
+}
+
+function updateViewTabs() {
+  elements.deletedViewTabs.querySelectorAll("[data-deleted-view]").forEach(button => {
+    const isActive = button.dataset.deletedView === state.view;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  elements.deletedState.textContent = state.view === "released"
+    ? "Released items are available for new numbers."
+    : "Deleted records are retained here as JSON-backed snapshots.";
+}
+
+function renderTableHead() {
+  elements.deletedHeadRow.innerHTML = `
+    <th>Type</th>
+    <th>Record</th>
+    <th>Name</th>
+    <th>Details</th>
+    <th>Deleted By</th>
+    <th>Deleted At</th>
+    ${state.view === "released" ? `
+      <th>Released By</th>
+      <th>Released At</th>
+    ` : ""}
+  `;
 }
 
 function handleDeletedItemRowClick(event) {
@@ -159,9 +207,10 @@ function openDeletedActionModal(itemId) {
   elements.deletedActionTitle.textContent = label;
   elements.deletedActionMeta.textContent = `${formatType(item.entity_type)} | Deleted ${formatDateTime(item.deleted_at)}`;
   elements.deletedActionDetails.innerHTML = buildDeletedActionDetails(item, record);
+  elements.republishDeletedItemBtn.classList.toggle("hidden", state.view === "released");
   elements.republishDeletedItemBtn.disabled = !canRepublishItem(item);
-  elements.releasePartCodeBtn.classList.toggle("hidden", !canReleasePartCode(item));
-  elements.releasePartCodeBtn.disabled = !canReleasePartCode(item);
+  elements.releaseItemForReuseBtn.classList.toggle("hidden", !canReleaseItemForReuse(item));
+  elements.releaseItemForReuseBtn.disabled = !canReleaseItemForReuse(item);
   elements.deletedActionModal.classList.remove("hidden");
   document.body.classList.add("modal-open");
 }
@@ -171,8 +220,9 @@ function closeDeletedActionModal() {
   elements.deletedActionModal.classList.add("hidden");
   document.body.classList.remove("modal-open");
   elements.republishDeletedItemBtn.disabled = false;
-  elements.releasePartCodeBtn.disabled = false;
-  elements.releasePartCodeBtn.classList.add("hidden");
+  elements.republishDeletedItemBtn.classList.remove("hidden");
+  elements.releaseItemForReuseBtn.disabled = false;
+  elements.releaseItemForReuseBtn.classList.add("hidden");
 }
 
 async function republishSelectedDeletedItem() {
@@ -197,28 +247,29 @@ async function republishSelectedDeletedItem() {
   }
 }
 
-async function releaseSelectedPartCode() {
+async function releaseSelectedItemForReuse() {
   const item = state.selectedItem;
-  if (!item || !canReleasePartCode(item)) return;
+  if (!item || !canReleaseItemForReuse(item)) return;
 
-  const label = item.display_key || `Part #${item.entity_id}`;
-  const confirmed = window.confirm(`${label} will stay deleted, but its part code will become available for new requests. Continue?`);
+  const label = item.display_key || `${formatType(item.entity_type)} #${item.entity_id}`;
+  const noun = item.entity_type === "document" ? "document number" : "part code";
+  const confirmed = window.confirm(`${label} will stay deleted, but its ${noun} will become available for new requests. Continue?`);
   if (!confirmed) return;
 
-  elements.releasePartCodeBtn.disabled = true;
+  elements.releaseItemForReuseBtn.disabled = true;
   elements.republishDeletedItemBtn.disabled = true;
   showMessage("", "hidden");
-  elements.deletedState.textContent = "Releasing code";
+  elements.deletedState.textContent = "Releasing item";
 
   try {
-    await apiPost(`/api/admin/deleted-items/${item.id}/release-part-code`, {});
+    await apiPost(`/api/admin/deleted-items/${item.id}/release-for-reuse`, {});
     showMessage(`${label} released for reuse.`, "success");
     closeDeletedActionModal();
     await loadDeletedItems();
   } catch (error) {
     showMessage(error.message, "error");
     elements.deletedState.textContent = "Check required";
-    elements.releasePartCodeBtn.disabled = false;
+    elements.releaseItemForReuseBtn.disabled = false;
     elements.republishDeletedItemBtn.disabled = !canRepublishItem(item);
   }
 }
@@ -231,7 +282,9 @@ function buildDeletedActionDetails(item, record) {
     ["Details", getRecordDetails(item, record)],
     ["Deleted By", item.deleted_by || "-"],
     ["Deleted At", formatDateTime(item.deleted_at)],
-    ["Code Reuse", item.entity_type === "part" ? "Locked until released by Part List Admin" : "-"]
+    ["Reuse Status", item.released_for_reuse_at
+      ? `Released by ${item.released_for_reuse_by || "-"} at ${formatDateTime(item.released_for_reuse_at)}`
+      : `Locked until released by ${formatType(item.entity_type)} List Admin`]
   ];
 
   return rows.map(([label, value]) => `
@@ -243,16 +296,17 @@ function buildDeletedActionDetails(item, record) {
 }
 
 function canRepublishItem(item) {
+  if (state.view === "released" || item.released_for_reuse_at || item.republished_at) return false;
   if (item.entity_type === "document") return Auth.hasPermission(state.currentUser, "document_admin");
   if (item.entity_type === "part") return Auth.hasPermission(state.currentUser, "part_admin");
   return false;
 }
 
-function canReleasePartCode(item) {
-  return item.entity_type === "part"
-    && Auth.hasPermission(state.currentUser, "part_admin")
-    && !item.released_for_reuse_at
-    && !item.republished_at;
+function canReleaseItemForReuse(item) {
+  if (state.view === "released" || item.released_for_reuse_at || item.republished_at) return false;
+  if (item.entity_type === "document") return Auth.hasPermission(state.currentUser, "document_admin");
+  if (item.entity_type === "part") return Auth.hasPermission(state.currentUser, "part_admin");
+  return false;
 }
 
 function getFilteredItems() {

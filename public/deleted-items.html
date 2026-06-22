@@ -11,7 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>XERA Deleted Items</title>
   <script src="/protected-boot.js"></script>
-  <link rel="stylesheet" href="/styles.css?v=deleted-items-modal-20260608">
+  <link rel="stylesheet" href="/styles.css?v=deleted-items-released-items-20260622">
 </head>
 <body>
   <header class="topbar">
@@ -38,10 +38,12 @@
           <h2>Filters</h2>
           <p id="deletedState">Deleted records are retained here as JSON-backed snapshots.</p>
         </div>
-        <div class="form-actions">
-          <a class="secondary-btn hidden" id="releasedPartCodesLink" href="/released-part-codes.html">Released Part Codes</a>
-          <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
-        </div>
+        <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+
+      <div class="tab-row" id="deletedViewTabs" role="tablist" aria-label="Deleted item views">
+        <button class="tab-btn active" type="button" data-deleted-view="deleted" aria-pressed="true">Deleted Items</button>
+        <button class="tab-btn" type="button" data-deleted-view="released" aria-pressed="false">Released Items</button>
       </div>
 
       <form class="filter-form" id="filterForm">
@@ -58,6 +60,8 @@
                 <label class="search-scope-option"><input type="checkbox" value="details" data-search-scope-option data-label="Details">Details</label>
                 <label class="search-scope-option"><input type="checkbox" value="deleted_by" data-search-scope-option data-label="Deleted By">Deleted By</label>
                 <label class="search-scope-option"><input type="checkbox" value="deleted_at" data-search-scope-option data-label="Deleted At">Deleted At</label>
+                <label class="search-scope-option"><input type="checkbox" value="released_by" data-search-scope-option data-label="Released By">Released By</label>
+                <label class="search-scope-option"><input type="checkbox" value="released_at" data-search-scope-option data-label="Released At">Released At</label>
               </div>
             </details>
           </div>
@@ -79,7 +83,7 @@
     <section class="panel table-panel">
       <div class="panel-head">
         <div>
-          <h2>Deleted Records</h2>
+          <h2 id="deletedTableTitle">Deleted Records</h2>
           <p id="deletedCount">0 records</p>
         </div>
       </div>
@@ -87,7 +91,7 @@
       <div class="table-wrap">
         <table class="deleted-items-table">
           <thead>
-            <tr>
+            <tr id="deletedHeadRow">
               <th>Type</th>
               <th>Record</th>
               <th>Name</th>
@@ -118,7 +122,7 @@
         <dl class="deleted-detail-list" id="deletedActionDetails"></dl>
         <div class="form-actions">
           <button class="secondary-btn" id="cancelDeletedActionBtn" type="button">Cancel</button>
-          <button class="secondary-btn hidden" id="releasePartCodeBtn" type="button">Release Code for Reuse</button>
+          <button class="secondary-btn hidden" id="releaseItemForReuseBtn" type="button">Release for Reuse</button>
           <button class="primary-btn" id="republishDeletedItemBtn" type="button">Republish</button>
         </div>
       </div>
@@ -127,6 +131,6 @@
 
   <script src="/auth.js"></script>
   <script src="/ui.js"></script>
-  <script src="/deleted-items.js?v=deleted-items-reuse-20260622"></script>
+  <script src="/deleted-items.js?v=deleted-items-released-items-20260622"></script>
 </body>
 </html>

@@ -574,6 +574,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { admin: user.display_name, items: await listReleasedPartCodes() });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/admin/deleted-items/released-items") {
+      const user = await requireAnyAdmin(req);
+      return sendJson(res, 200, { admin: user.display_name, items: await listReleasedItems(user, url.searchParams.get("type")) });
+    }
+
     const republishDeletedItemMatch = url.pathname.match(/^\/api\/admin\/deleted-items\/(\d+)\/republish$/);
     if (req.method === "POST" && republishDeletedItemMatch) {
       const user = await requireAnyAdmin(req);
@@ -582,11 +587,19 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const releaseDeletedItemMatch = url.pathname.match(/^\/api\/admin\/deleted-items\/(\d+)\/release-for-reuse$/);
+    if (req.method === "POST" && releaseDeletedItemMatch) {
+      const user = await requireAnyAdmin(req);
+      const deletedItemId = Number(releaseDeletedItemMatch[1]);
+      const result = await releaseDeletedItemForReuse(deletedItemId, user);
+      return sendJson(res, 200, result);
+    }
+
     const releaseDeletedPartCodeMatch = url.pathname.match(/^\/api\/admin\/deleted-items\/(\d+)\/release-part-code$/);
     if (req.method === "POST" && releaseDeletedPartCodeMatch) {
       const user = await requirePermission(req, "part_admin");
       const deletedItemId = Number(releaseDeletedPartCodeMatch[1]);
-      const result = await releaseDeletedPartCodeForReuse(deletedItemId, user);
+      const result = await releaseDeletedItemForReuse(deletedItemId, user);
       return sendJson(res, 200, result);
     }
 
@@ -3181,10 +3194,11 @@ async function buildPreview(input, options = {}) {
     documentNo = buildDocumentNo(rule, input, sequenceNo);
   }
 
-  if (await isDocumentNoUnavailable(documentNo, options.ignoreRequestId)) {
+  const documentNoConflict = await getDocumentNoConflict(documentNo, options);
+  if (documentNoConflict) {
     return {
       valid: false,
-      errors: [`${documentNo} is already approved or waiting for approval.`],
+      errors: [formatDocumentNoConflictMessage(documentNo, documentNoConflict)],
       input,
       document_no_preview: documentNo,
       sequence_no_preview: sequenceNo
@@ -3251,8 +3265,9 @@ async function createDocumentRequest(user, body) {
   normalized.document_no = preview.document_no_preview;
 
   return await db.transaction(async () => {
-    if (await isDocumentNoUnavailable(preview.document_no_preview)) {
-      throw httpError(409, "duplicate_document_no", `${preview.document_no_preview} is already approved or waiting for approval.`);
+    const conflict = await getDocumentNoConflict(preview.document_no_preview);
+    if (conflict) {
+      throw httpError(409, "duplicate_document_no", formatDocumentNoConflictMessage(preview.document_no_preview, conflict));
     }
 
     const now = nowIso();
@@ -3329,8 +3344,11 @@ async function publishDocumentRequestInTransaction(requestId, user, options = {}
     throw httpError(422, "not_implemented", `${input.category} approvals are not implemented in the MVP backend yet.`);
   }
 
-  if (before.document_no && (await isDocumentNoApprovedElsewhere(before.document_no))) {
-    throw httpError(409, "duplicate_document_no", `${before.document_no} is already approved.`);
+  const conflict = before.document_no
+    ? await getDocumentNoConflict(before.document_no, { ignoreRequestId: requestId })
+    : null;
+  if (conflict) {
+    throw httpError(409, "duplicate_document_no", formatDocumentNoConflictMessage(before.document_no, conflict));
   }
 
   const sequenceNo = before.document_no
@@ -3730,34 +3748,13 @@ async function validateDocumentRecordEditInput(input, options = {}) {
     throw httpError(422, "validation_failed", errors.join(" "));
   }
 
-  if (await isDocumentNoUnavailableForEdit(input.document_no, options)) {
-    throw httpError(409, "duplicate_document_no", `${input.document_no} is already approved or waiting for approval.`);
+  const documentNoConflict = await getDocumentNoConflict(input.document_no, options);
+  if (documentNoConflict) {
+    throw httpError(409, "duplicate_document_no", formatDocumentNoConflictMessage(input.document_no, documentNoConflict));
   }
   if (await isGeneratedFilenameUnavailableForEdit(input.generated_filename, options)) {
     throw httpError(409, "duplicate_generated_filename", `${input.generated_filename} is already approved or waiting for approval.`);
   }
-}
-
-async function isDocumentNoUnavailableForEdit(documentNo, options = {}) {
-  if (!documentNo) return false;
-  const record = await db.prepare(`
-    SELECT id
-    FROM document_records
-    WHERE document_no = ?
-      AND (? IS NULL OR id <> ?)
-    LIMIT 1
-  `).get(documentNo, options.ignoreDocumentId || null, options.ignoreDocumentId || null);
-  if (record) return true;
-
-  const request = await db.prepare(`
-    SELECT id
-    FROM document_requests
-    WHERE document_no = ?
-      AND status <> 'rejected'
-      AND (? IS NULL OR id <> ?)
-    LIMIT 1
-  `).get(documentNo, options.ignoreRequestId || null, options.ignoreRequestId || null);
-  return Boolean(request);
 }
 
 async function isGeneratedFilenameUnavailableForEdit(filename, options = {}) {
@@ -4301,8 +4298,8 @@ function buildSequencePrefix(rule, input) {
 
 async function getMaxSequenceForPrefix(prefix) {
   const rows = [
-    ...(await db.prepare("SELECT document_no FROM document_records WHERE document_no LIKE ?").all(`${prefix}%`)),
-    ...(await db.prepare("SELECT document_no FROM document_requests WHERE status = 'pending' AND document_no LIKE ?").all(`${prefix}%`))
+    ...(await db.prepare("SELECT document_no FROM document_records WHERE document_no LIKE ? AND instr(document_no, '__REUSE_RELEASED_') = 0").all(`${prefix}%`)),
+    ...(await db.prepare("SELECT document_no FROM document_requests WHERE status = 'pending' AND document_no LIKE ? AND instr(document_no, '__REUSE_RELEASED_') = 0").all(`${prefix}%`))
   ];
   let max = 0;
   for (const row of rows) {
@@ -4313,10 +4310,56 @@ async function getMaxSequenceForPrefix(prefix) {
 }
 
 async function isDocumentNoUnavailable(documentNo, ignoreRequestId = null) {
-  if (!documentNo) return false;
+  return Boolean(await getDocumentNoConflict(documentNo, { ignoreRequestId }));
+}
+
+async function getDocumentNoConflict(documentNo, options = {}) {
+  if (!documentNo) return null;
   const equivalentDocumentNos = getEquivalentDocumentNos(documentNo);
-  if (await isDocumentNoApprovedElsewhere(equivalentDocumentNos)) return true;
+  if (equivalentDocumentNos.length === 0) return null;
   const placeholders = equivalentDocumentNos.map(() => "?").join(", ");
+
+  const activeRecord = await db.prepare(`
+    SELECT id
+    FROM document_records
+    WHERE document_no IN (${placeholders})
+      AND deleted_at IS NULL
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(...equivalentDocumentNos, options.ignoreDocumentId || null, options.ignoreDocumentId || null);
+  if (activeRecord) return { type: "active_record", record_id: activeRecord.id };
+
+  const deletedItem = await db.prepare(`
+    SELECT di.id, dr.id AS record_id
+    FROM deleted_items di
+    LEFT JOIN document_records dr
+      ON dr.id = di.entity_id
+      AND di.entity_type = 'document'
+    WHERE di.entity_type = 'document'
+      AND di.display_key IN (${placeholders})
+      AND di.republished_at IS NULL
+      AND di.released_for_reuse_at IS NULL
+      AND (? IS NULL OR di.entity_id <> ?)
+    LIMIT 1
+  `).get(...equivalentDocumentNos, options.ignoreDocumentId || null, options.ignoreDocumentId || null);
+  if (deletedItem) {
+    return {
+      type: "deleted_record",
+      record_id: deletedItem.record_id,
+      deleted_item_id: deletedItem.id
+    };
+  }
+
+  const legacyDeletedRecord = await db.prepare(`
+    SELECT id
+    FROM document_records
+    WHERE document_no IN (${placeholders})
+      AND deleted_at IS NOT NULL
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(...equivalentDocumentNos, options.ignoreDocumentId || null, options.ignoreDocumentId || null);
+  if (legacyDeletedRecord) return { type: "deleted_record", record_id: legacyDeletedRecord.id };
+
   const pending = await db.prepare(`
     SELECT id
     FROM document_requests
@@ -4324,16 +4367,28 @@ async function isDocumentNoUnavailable(documentNo, ignoreRequestId = null) {
       AND document_no IN (${placeholders})
       AND (? IS NULL OR id <> ?)
     LIMIT 1
-  `).get(...equivalentDocumentNos, ignoreRequestId, ignoreRequestId);
-  return Boolean(pending);
+  `).get(...equivalentDocumentNos, options.ignoreRequestId || null, options.ignoreRequestId || null);
+  if (pending) return { type: "pending_request", request_id: pending.id };
+
+  return null;
 }
 
 async function isDocumentNoApprovedElsewhere(documentNo) {
   const documentNos = Array.isArray(documentNo) ? documentNo.filter(Boolean) : [documentNo].filter(Boolean);
   if (documentNos.length === 0) return false;
   const placeholders = documentNos.map(() => "?").join(", ");
-  const row = await db.prepare(`SELECT id FROM document_records WHERE document_no IN (${placeholders}) LIMIT 1`).get(...documentNos);
+  const row = await db.prepare(`SELECT id FROM document_records WHERE document_no IN (${placeholders}) AND deleted_at IS NULL LIMIT 1`).get(...documentNos);
   return Boolean(row);
+}
+
+function formatDocumentNoConflictMessage(documentNo, conflict) {
+  if (conflict && conflict.type === "deleted_record") {
+    return `${documentNo} was previously used and deleted, so this document number cannot be reused until a Document List Admin releases it from Deleted Items.`;
+  }
+  if (conflict && conflict.type === "pending_request") {
+    return `${documentNo} is already reserved by a pending document request.`;
+  }
+  return `${documentNo} is already approved in the document list.`;
 }
 
 function getEquivalentDocumentNos(documentNo) {
@@ -4583,6 +4638,19 @@ async function listDeletedItems(user, requestedType = "") {
 }
 
 async function listReleasedPartCodes() {
+  const partAdmin = { permissions_json: JSON.stringify(["part_admin"]) };
+  return await listReleasedItems(partAdmin, "part");
+}
+
+async function listReleasedItems(user, requestedType = "") {
+  const allowedTypes = [];
+  if (userHasPermission(user, "document_admin")) allowedTypes.push("document");
+  if (userHasPermission(user, "part_admin")) allowedTypes.push("part");
+  const type = String(requestedType || "").trim().toLowerCase();
+  const types = type ? allowedTypes.filter(allowedType => allowedType === type) : allowedTypes;
+  if (types.length === 0) return [];
+
+  const placeholders = types.map(() => "?").join(", ");
   const rows = await db.prepare(`
     SELECT
       di.*,
@@ -4593,10 +4661,10 @@ async function listReleasedPartCodes() {
     LEFT JOIN users u ON u.id = di.deleted_by_user_id
     LEFT JOIN users ru ON ru.id = di.republished_by_user_id
     LEFT JOIN users rru ON rru.id = di.released_for_reuse_by_user_id
-    WHERE di.entity_type = 'part'
+    WHERE di.entity_type IN (${placeholders})
       AND di.released_for_reuse_at IS NOT NULL
     ORDER BY di.released_for_reuse_at DESC, di.id DESC
-  `).all();
+  `).all(...types);
 
   return rows.map(normalizeDeletedItem).filter(Boolean);
 }
@@ -4609,7 +4677,7 @@ async function republishDeletedItem(deletedItemId, user) {
     throw httpError(409, "already_republished", "This deleted item has already been republished.");
   }
   if (deletedItem.released_for_reuse_at) {
-    throw httpError(409, "code_released_for_reuse", "This deleted part code was released for reuse and cannot be republished.");
+    throw httpError(409, "code_released_for_reuse", "This deleted item was released for reuse and cannot be republished.");
   }
 
   const now = nowIso();
@@ -4621,7 +4689,7 @@ async function republishDeletedItem(deletedItemId, user) {
       throw httpError(409, "already_republished", "This deleted item has already been republished.");
     }
     if (currentItem.released_for_reuse_at) {
-      throw httpError(409, "code_released_for_reuse", "This deleted part code was released for reuse and cannot be republished.");
+      throw httpError(409, "code_released_for_reuse", "This deleted item was released for reuse and cannot be republished.");
     }
 
     const record = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
@@ -4656,58 +4724,44 @@ async function republishDeletedItem(deletedItemId, user) {
   });
 }
 
-async function releaseDeletedPartCodeForReuse(deletedItemId, user) {
+async function releaseDeletedItemForReuse(deletedItemId, user) {
   const deletedItem = await getDeletedItemById(deletedItemId);
   if (!deletedItem) throw httpError(404, "not_found", "Deleted item not found.");
-  if (deletedItem.entity_type !== "part") {
-    throw httpError(422, "invalid_deleted_item_type", "Only deleted part codes can be released for reuse.");
+  if (!["document", "part"].includes(deletedItem.entity_type)) {
+    throw httpError(422, "invalid_deleted_item_type", "Only deleted documents and parts can be released for reuse.");
   }
   requireDeletedItemPermission(user, deletedItem.entity_type);
   if (deletedItem.republished_at) {
     throw httpError(409, "already_republished", "This deleted item has already been republished.");
   }
   if (deletedItem.released_for_reuse_at) {
-    throw httpError(409, "already_released_for_reuse", "This deleted part code has already been released for reuse.");
+    throw httpError(409, "already_released_for_reuse", "This deleted item has already been released for reuse.");
   }
 
   const now = nowIso();
   return await db.transaction(async () => {
     const currentItem = await getDeletedItemById(deletedItemId);
     if (!currentItem) throw httpError(404, "not_found", "Deleted item not found.");
-    if (currentItem.entity_type !== "part") {
-      throw httpError(422, "invalid_deleted_item_type", "Only deleted part codes can be released for reuse.");
+    if (!["document", "part"].includes(currentItem.entity_type)) {
+      throw httpError(422, "invalid_deleted_item_type", "Only deleted documents and parts can be released for reuse.");
     }
     requireDeletedItemPermission(user, currentItem.entity_type);
     if (currentItem.republished_at) {
       throw httpError(409, "already_republished", "This deleted item has already been republished.");
     }
     if (currentItem.released_for_reuse_at) {
-      throw httpError(409, "already_released_for_reuse", "This deleted part code has already been released for reuse.");
+      throw httpError(409, "already_released_for_reuse", "This deleted item has already been released for reuse.");
     }
 
-    const record = await getDeletedEntityRecord("part", currentItem.entity_id);
-    if (!record) throw httpError(404, "not_found", "Original part record not found.");
+    const record = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
+    if (!record) throw httpError(404, "not_found", "Original record not found.");
     if (!record.deleted_at) {
-      throw httpError(409, "already_active", "Original part record is already active.");
+      throw httpError(409, "already_active", "Original record is already active.");
     }
 
-    const originalPartNumber = currentItem.display_key || record.part_number;
-    const releasedPartNumber = buildReleasedPartCodeValue(originalPartNumber, currentItem.id);
-    await db.prepare(`
-      UPDATE part_records
-      SET part_number = ?
-      WHERE id = ?
-        AND deleted_at IS NOT NULL
-    `).run(releasedPartNumber, currentItem.entity_id);
-
-    if (record.request_id) {
-      await db.prepare(`
-        UPDATE part_requests
-        SET part_number = ?,
-            updated_at = ?
-        WHERE id = ?
-      `).run(releasedPartNumber, now, record.request_id);
-    }
+    const releaseMetadata = currentItem.entity_type === "document"
+      ? await releaseDeletedDocumentRecord(currentItem, record, now)
+      : await releaseDeletedPartRecord(currentItem, record, now);
 
     await db.prepare(`
       UPDATE deleted_items
@@ -4718,16 +4772,16 @@ async function releaseDeletedPartCodeForReuse(deletedItemId, user) {
         AND released_for_reuse_at IS NULL
     `).run(user.id, now, deletedItemId);
 
-    const releasedRecord = await getDeletedEntityRecord("part", currentItem.entity_id);
+    const releasedRecord = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
     await insertAudit(
       user.id,
-      "part_record",
+      currentItem.entity_type === "document" ? "document_record" : "part_record",
       currentItem.entity_id,
-      "part.code_released_for_reuse",
+      `${currentItem.entity_type}.code_released_for_reuse`,
       record,
       {
         ...releasedRecord,
-        released_original_part_number: originalPartNumber,
+        ...releaseMetadata,
         released_for_reuse_at: now,
         released_for_reuse_by_user_id: user.id
       }
@@ -4735,9 +4789,72 @@ async function releaseDeletedPartCodeForReuse(deletedItemId, user) {
 
     return {
       deleted_item: await getDeletedItemById(deletedItemId),
-      part: releasedRecord
+      [currentItem.entity_type]: releasedRecord
     };
   });
+}
+
+async function releaseDeletedDocumentRecord(currentItem, record, now) {
+  const originalDocumentNo = currentItem.display_key || record.document_no;
+  const releasedDocumentNo = buildReleasedDocumentNoValue(originalDocumentNo, currentItem.id);
+  const releasedFilename = buildReleasedFilenameValue(record.generated_filename, currentItem.id);
+
+  await db.prepare(`
+    UPDATE document_records
+    SET document_no = ?,
+        generated_filename = ?
+    WHERE id = ?
+      AND deleted_at IS NOT NULL
+  `).run(releasedDocumentNo, releasedFilename, currentItem.entity_id);
+
+  if (record.request_id) {
+    await db.prepare(`
+      UPDATE document_requests
+      SET document_no = ?,
+          generated_filename = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(releasedDocumentNo, releasedFilename, now, record.request_id);
+  }
+
+  return {
+    released_original_document_no: originalDocumentNo,
+    released_original_generated_filename: record.generated_filename
+  };
+}
+
+async function releaseDeletedPartRecord(currentItem, record, now) {
+  const originalPartNumber = currentItem.display_key || record.part_number;
+  const releasedPartNumber = buildReleasedPartCodeValue(originalPartNumber, currentItem.id);
+
+  await db.prepare(`
+    UPDATE part_records
+    SET part_number = ?
+    WHERE id = ?
+      AND deleted_at IS NOT NULL
+  `).run(releasedPartNumber, currentItem.entity_id);
+
+  if (record.request_id) {
+    await db.prepare(`
+      UPDATE part_requests
+      SET part_number = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(releasedPartNumber, now, record.request_id);
+  }
+
+  return {
+    released_original_part_number: originalPartNumber
+  };
+}
+
+function buildReleasedDocumentNoValue(documentNo, deletedItemId) {
+  return `${sanitizeText(documentNo)}__REUSE_RELEASED_${deletedItemId}`;
+}
+
+function buildReleasedFilenameValue(filename, deletedItemId) {
+  const cleanFilename = sanitizeFilenameText(filename || `document-${deletedItemId}`);
+  return `${cleanFilename}__REUSE_RELEASED_${deletedItemId}`;
 }
 
 function buildReleasedPartCodeValue(partNumber, deletedItemId) {
