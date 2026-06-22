@@ -5,6 +5,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const { createDatabase } = require("./db");
+const { ensurePendingDocumentRevisionConstraint } = require("./migrations");
+const { toDateValue } = require("./time");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(ROOT_DIR, "data");
@@ -17,6 +19,7 @@ const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 const PORT = Number(process.env.PORT || 32780);
 const NODE_ENV = process.env.NODE_ENV || "development";
 const ALLOW_PUBLIC_SIGNUP = !parseBooleanEnv(process.env.DISABLE_PUBLIC_SIGNUP, false);
+const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Istanbul";
 
 // Document format rules are intentionally centralized here; every preview,
 // approval, filename export and revision update path reads from this object.
@@ -310,18 +313,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/parts") {
+      await resolveUser(req);
       return sendJson(res, 200, { parts: await listPartRecords({ includePendingRevision: true }) });
     }
 
     if (req.method === "GET" && url.pathname === "/api/parts/archive") {
+      await resolveUser(req);
       return sendJson(res, 200, { archive: await listPartArchive() });
     }
 
     if (req.method === "GET" && url.pathname === "/api/parts/standard-hardware") {
+      await resolveUser(req);
       return sendJson(res, 200, { hardware: await listPartStandardHardware() });
     }
 
     if (req.method === "GET" && url.pathname === "/api/parts/export.xlsx") {
+      await resolveUser(req);
       const rows = await listPartRecords();
       const workbook = buildPartsWorkbook(rows);
       return sendBinary(res, 200, workbook, {
@@ -331,6 +338,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/parts/custom-export.xlsx") {
+      await resolveUser(req);
       const body = await readJson(req);
       const rows = await listCustomExportPartRecords(body.part_ids || body.partIds || []);
       const workbook = buildCustomPartsWorkbook(rows);
@@ -444,14 +452,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/documents") {
+      await resolveUser(req);
       return sendJson(res, 200, { documents: await listCurrentDocuments({ includePendingRevision: true }) });
     }
 
     if (req.method === "GET" && url.pathname === "/api/documents/archive") {
+      await resolveUser(req);
       return sendJson(res, 200, { archive: await listRevisionArchive() });
     }
 
     if (req.method === "GET" && url.pathname === "/api/documents/export.xlsx") {
+      await resolveUser(req);
       const rows = await listCurrentDocuments();
       const workbook = buildDocumentsWorkbook(rows);
       return sendBinary(res, 200, workbook, {
@@ -1021,6 +1032,7 @@ async function initializeDatabase() {
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_project_main ON part_requests(project_code, main_code);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_status ON part_requests(status);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_revision_requests_record ON part_revision_requests(part_record_id, status);");
+  await ensurePendingDocumentRevisionConstraint(db, nowIso());
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_part_hardware_unique ON part_standard_hardware_reference(group_name, serial_no, part_name, source_row, source_column);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_notifications_recipient_status ON notifications(recipient_user_id, status, created_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_notifications_entity ON notifications(entity_type, entity_id, status);");
@@ -1947,6 +1959,10 @@ async function rejectPartRevisionRequest(requestId, user, reason) {
 }
 
 async function adminEditPartRecord(partId, user, body = {}) {
+  return await db.transaction(() => adminEditPartRecordInTransaction(partId, user, body));
+}
+
+async function adminEditPartRecordInTransaction(partId, user, body = {}) {
   const before = await getPartRecordById(partId);
   if (!before) throw httpError(404, "not_found", "Part record not found.");
   const result = await updatePartRecordDetails(partId, user, body, {
@@ -1958,6 +1974,10 @@ async function adminEditPartRecord(partId, user, body = {}) {
 }
 
 async function editPartRecordByRequester(partId, user, body = {}) {
+  return await db.transaction(() => editPartRecordByRequesterInTransaction(partId, user, body));
+}
+
+async function editPartRecordByRequesterInTransaction(partId, user, body = {}) {
   const before = await getPartRecordById(partId);
   if (!before) throw httpError(404, "not_found", "Part record not found.");
   if (Number(before.requested_by_user_id) !== Number(user.id)) {
@@ -1989,6 +2009,10 @@ async function editPartRecordByRequester(partId, user, body = {}) {
 }
 
 async function updatePartRecordDetails(partId, user, body = {}, options = {}) {
+  return await db.transaction(() => updatePartRecordDetailsInTransaction(partId, user, body, options));
+}
+
+async function updatePartRecordDetailsInTransaction(partId, user, body = {}, options = {}) {
   const before = await getPartRecordById(partId);
   if (!before) throw httpError(404, "not_found", "Part record not found.");
   const request = before.request_id ? await getPartRequestById(before.request_id) : null;
@@ -3491,6 +3515,10 @@ async function renameApprovedDocument(documentId, user, documentName) {
 }
 
 async function adminEditDocumentRecord(documentId, user, body = {}) {
+  return await db.transaction(() => adminEditDocumentRecordInTransaction(documentId, user, body));
+}
+
+async function adminEditDocumentRecordInTransaction(documentId, user, body = {}) {
   const before = await getDocumentById(documentId);
   if (!before) throw httpError(404, "not_found", "Document record not found.");
   const result = await updateDocumentRecordDetails(documentId, user, body, {
@@ -3503,6 +3531,10 @@ async function adminEditDocumentRecord(documentId, user, body = {}) {
 }
 
 async function editDocumentRecordByRequester(documentId, user, body = {}) {
+  return await db.transaction(() => editDocumentRecordByRequesterInTransaction(documentId, user, body));
+}
+
+async function editDocumentRecordByRequesterInTransaction(documentId, user, body = {}) {
   const before = await getDocumentById(documentId);
   if (!before) throw httpError(404, "not_found", "Document record not found.");
   const request = before.request_id ? await getRequestById(before.request_id) : null;
@@ -3535,6 +3567,10 @@ async function editDocumentRecordByRequester(documentId, user, body = {}) {
 }
 
 async function updateDocumentRecordDetails(documentId, user, body = {}, options = {}) {
+  return await db.transaction(() => updateDocumentRecordDetailsInTransaction(documentId, user, body, options));
+}
+
+async function updateDocumentRecordDetailsInTransaction(documentId, user, body = {}, options = {}) {
   const before = await getDocumentById(documentId);
   if (!before) throw httpError(404, "not_found", "Document record not found.");
   const request = before.request_id ? await getRequestById(before.request_id) : null;
@@ -3987,6 +4023,17 @@ async function updateDocumentRevision(documentId, user, options = {}) {
 }
 
 async function createRevisionRequest(documentId, user, body = {}) {
+  try {
+    return await db.transaction(() => createRevisionRequestInTransaction(documentId, user, body));
+  } catch (error) {
+    if (isPendingDocumentRevisionConstraintError(error)) {
+      throw httpError(409, "revision_request_exists", "There is already a pending revision request for this document.");
+    }
+    throw error;
+  }
+}
+
+async function createRevisionRequestInTransaction(documentId, user, body = {}) {
   // Users request a revision from Document List; admins decide it later from
   // Admin Review. Only one pending revision request per document is allowed.
   const documentRecord = await getDocumentById(documentId);
@@ -4023,6 +4070,12 @@ async function createRevisionRequest(documentId, user, body = {}) {
   const request = await getRevisionRequestById(Number(result.lastInsertRowid));
   await insertAudit(user.id, "revision_request", request.id, "revision_request.created", null, request);
   return { revision_request: request };
+}
+
+function isPendingDocumentRevisionConstraintError(error) {
+  const message = String(error && error.message || "");
+  return message.includes("idx_document_revision_requests_pending")
+    || message.includes("UNIQUE constraint failed: document_revision_requests.document_record_id");
 }
 
 async function listPendingRevisionRequests() {
@@ -6359,7 +6412,7 @@ function isValidUiDate(value) {
 }
 
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return toDateValue(new Date(), APP_TIME_ZONE);
 }
 
 function nowIso() {
@@ -6461,9 +6514,6 @@ function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,x-session-token,authorization",
     "content-length": Buffer.byteLength(body)
   });
   res.end(body);
@@ -6472,18 +6522,13 @@ function sendJson(res, statusCode, payload) {
 function sendBinary(res, statusCode, body, headers = {}) {
   res.writeHead(statusCode, {
     ...headers,
-    "access-control-allow-origin": "*",
     "content-length": body.length
   });
   res.end(body);
 }
 
 function sendEmpty(res, statusCode) {
-  res.writeHead(statusCode, {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,x-session-token,authorization"
-  });
+  res.writeHead(statusCode);
   res.end();
 }
 

@@ -1,5 +1,5 @@
 let currentUser = null;
-const MVP_CATEGORIES = ["D", "R", "MD", "MR", "EC", "MARKETING", "QMS", "SOP"];
+const MVP_CATEGORIES = ["D", "R", "MD", "MR", "EC", "MARKETING", "QMS", "TEMPLATE", "SOP"];
 
 const CATEGORY_LABELS = {
   D: "D (General Purpose Document)",
@@ -9,6 +9,7 @@ const CATEGORY_LABELS = {
   EC: "EC (Engineering Change)",
   MARKETING: "MARKETING (Marketing Material ID)",
   QMS: "QMS (Quality Management)",
+  TEMPLATE: "TEMPLATE (Template / QT)",
   SOP: "SOP (SOP / Instruction)"
 };
 
@@ -17,7 +18,8 @@ const EXCEL_REFERENCE_OPTIONS = {
   R: ["N/A", "R&D", "QARA", "General", "GR10X", "GR10X-40K", "GR10X-50K", "VR10X-40K", "VR10X-50K", "GR10X-40KC1", "GR10X-50K2"],
   MANUFACTURING: ["N/A", "General", "GR10X", "GR10X-40K", "GR10X-50K", "VR10X-40K", "VR10X-50K", "GR10X-40KC1", "GR10X-50K2"],
   MARKETING: ["GR10X", "XEBTW6"],
-  SOP_INCOMING: ["1501-1107"]
+  SOP_INCOMING: ["1501-1107"],
+  TEMPLATE: ["05", "18"]
 };
 
 const state = {
@@ -203,11 +205,17 @@ const CATEGORY_FORM_RULES = {
       label: "QMS Type",
       options: [
         ["QM", "QM - Quality Manual"],
-        ["QP", "QP - Quality Process"],
-        ["QT", "QT - Template"]
+        ["QP", "QP - Quality Process"]
       ],
       selected: "QP"
     }
+  },
+  TEMPLATE: {
+    referenceType: "process",
+    referencePlaceholder: "05",
+    referenceOptions: EXCEL_REFERENCE_OPTIONS.TEMPLATE,
+    lockReferenceType: true,
+    usesRevision: true
   },
   SOP: {
     referenceType: "process",
@@ -235,7 +243,7 @@ async function init() {
   currentUser = await Auth.requireAuth();
   if (!currentUser) return;
   applyCurrentUser();
-  elements.creationDate.value = new Date().toISOString().slice(0, 10);
+  elements.creationDate.value = XeraTime.todayDateValue();
 
   bindEvents();
 
@@ -388,9 +396,23 @@ function applyCurrentUser() {
 
 async function loadRules() {
   const data = await apiGet("/api/rules");
-  state.categories = data.categories.filter(category =>
+  const categories = data.categories.filter(category =>
     MVP_CATEGORIES.includes(category.code) && category.implemented
   );
+  if (!categories.some(category => category.code === "TEMPLATE")) {
+    const qmsIndex = categories.findIndex(category => category.code === "QMS");
+    const insertIndex = qmsIndex >= 0 ? qmsIndex + 1 : categories.length;
+    categories.splice(insertIndex, 0, {
+      code: "TEMPLATE",
+      name: "Template / QT",
+      prefix: "XQT",
+      suffixType: "revision",
+      requiresSequence: true,
+      implemented: true,
+      example: "XQT-05-01_Quotation Form Template_EN_r01"
+    });
+  }
+  state.categories = categories;
 }
 
 function renderCategoryTabs() {
@@ -654,7 +676,7 @@ function findEcOrderDocumentName(order) {
 }
 
 function getSelectedYearYy() {
-  const creationDate = elements.creationDate.value || new Date().toISOString().slice(0, 10);
+  const creationDate = elements.creationDate.value || XeraTime.todayDateValue();
   return creationDate.slice(2, 4);
 }
 
@@ -725,8 +747,9 @@ function updateReferenceLabel() {
 }
 
 function collectFormData() {
+  const isTemplate = state.selectedCategory === "TEMPLATE";
   return {
-    category: state.selectedCategory || "",
+    category: isTemplate ? "QMS" : (state.selectedCategory || ""),
     document_no: state.documentNoTouched ? elements.documentNo.value : "",
     reference_type: elements.referenceType.value,
     reference_value: elements.referenceValue.value,
@@ -735,7 +758,7 @@ function collectFormData() {
     creation_date: elements.creationDate.value,
     revision: elements.revision.value || "r00",
     control_status: "controlled",
-    detail_type: elements.extraType.value,
+    detail_type: isTemplate ? "QT" : elements.extraType.value,
     detail_code: elements.extraCode.value,
     detail_version: elements.extraVersion.value,
     language: elements.language.value
@@ -1022,7 +1045,7 @@ function renderRequests(requests) {
     return `
       <tr>
         <td><span class="status-pill status-${escapeHtml(request.status)}">${escapeHtml(request.status)}</span></td>
-        <td>${escapeHtml(CATEGORY_LABELS[request.category] || request.category)}</td>
+        <td>${escapeHtml(formatRequestCategory(request))}</td>
         <td>${escapeHtml(docNo)}</td>
         <td>${escapeHtml(request.document_name)}</td>
         <td>${escapeHtml(request.reference_value || "-")}</td>
@@ -1031,6 +1054,11 @@ function renderRequests(requests) {
       </tr>
     `;
   }).join("");
+}
+
+function formatRequestCategory(request) {
+  if (String(request.document_no || "").startsWith("XQT-")) return CATEGORY_LABELS.TEMPLATE || "TEMPLATE";
+  return CATEGORY_LABELS[request.category] || request.category || "-";
 }
 
 function filterRequests(requests, filter) {
@@ -1093,7 +1121,7 @@ function clearForm(options = {}) {
   elements.referenceValue.value = "";
   elements.documentName.value = "";
   elements.revision.value = "r00";
-  elements.creationDate.value = new Date().toISOString().slice(0, 10);
+  elements.creationDate.value = XeraTime.todayDateValue();
   hideMessage();
   hideSuccessActions();
   if (state.selectedCategory) applyCategoryDefaults();
@@ -1205,3 +1233,165 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+// record-template-document-name-20260609
+(function installRecordTemplateDocumentNamePatch() {
+  if (globalThis.__recordTemplateDocumentNamePatchInstalled) return;
+  globalThis.__recordTemplateDocumentNamePatchInstalled = true;
+
+  state.recordTemplateDocumentNames = state.recordTemplateDocumentNames || [];
+  state.recordTemplateDocumentNamesLoaded = Boolean(state.recordTemplateDocumentNamesLoaded);
+  state.autoFilledRecordTemplateDocumentName = false;
+
+  Object.assign(elements, {
+    documentNameModeFields: document.getElementById("documentNameModeFields"),
+    documentNameSource: document.getElementById("documentNameSource"),
+    templateNameField: document.getElementById("templateNameField"),
+    documentNameTemplate: document.getElementById("documentNameTemplate"),
+    documentNameField: document.getElementById("documentNameField")
+  });
+
+  const originalApplyCategoryDefaults = applyCategoryDefaults;
+  applyCategoryDefaults = function patchedApplyCategoryDefaults() {
+    const result = originalApplyCategoryDefaults.apply(this, arguments);
+    refreshRecordDocumentNameMode();
+    return result;
+  };
+
+  const originalClearForm = clearForm;
+  clearForm = function patchedClearForm() {
+    if (elements.documentNameSource) elements.documentNameSource.value = "template";
+    if (elements.documentNameTemplate) elements.documentNameTemplate.value = "";
+    state.autoFilledRecordTemplateDocumentName = false;
+    return originalClearForm.apply(this, arguments);
+  };
+
+  const originalCollectFormData = collectFormData;
+  collectFormData = function patchedCollectFormData() {
+    syncRecordTemplateSelectionToDocumentName({ force: true });
+    return originalCollectFormData.apply(this, arguments);
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!elements.documentNameSource || !elements.documentNameTemplate) return;
+
+    elements.documentNameSource.addEventListener("change", () => {
+      state.autoFilledRecordTemplateDocumentName = false;
+      refreshRecordDocumentNameMode({ force: true });
+      updatePreview();
+    });
+
+    elements.documentNameTemplate.addEventListener("change", () => {
+      syncRecordTemplateSelectionToDocumentName({ force: true });
+      updatePreview();
+    });
+  });
+
+  function refreshRecordDocumentNameMode(options = {}) {
+    if (!elements.documentNameModeFields || !elements.documentNameField || !elements.documentName) return;
+
+    const isRecordRequest = state.selectedCategory === "R";
+    elements.documentNameModeFields.classList.toggle("hidden", !isRecordRequest);
+
+    if (!isRecordRequest) {
+      elements.templateNameField?.classList.add("hidden");
+      elements.documentNameField.classList.remove("hidden");
+      elements.documentName.disabled = false;
+      return;
+    }
+
+    if (!elements.documentNameSource.value) elements.documentNameSource.value = "template";
+    const useTemplate = elements.documentNameSource.value === "template";
+    elements.templateNameField?.classList.toggle("hidden", !useTemplate);
+    elements.documentNameField.classList.toggle("hidden", useTemplate);
+    elements.documentName.disabled = useTemplate;
+
+    if (!useTemplate) {
+      if (options.force && state.autoFilledRecordTemplateDocumentName) {
+        elements.documentName.value = "";
+        state.autoFilledRecordTemplateDocumentName = false;
+      }
+      return;
+    }
+
+    loadRecordTemplateDocumentNames()
+      .then(() => {
+        renderRecordTemplateOptions();
+        syncRecordTemplateSelectionToDocumentName({ force: true });
+        updatePreview();
+      })
+      .catch(error => {
+        renderRecordTemplateOptions([]);
+        showMessage("Template list could not be loaded. Select Other and enter the document name manually. " + error.message, "warning");
+      });
+  }
+
+  async function loadRecordTemplateDocumentNames() {
+    if (state.recordTemplateDocumentNamesLoaded) return;
+    const data = await apiGet("/api/documents");
+    state.recordTemplateDocumentNames = buildRecordTemplateDocumentNames(data.documents || []);
+    state.recordTemplateDocumentNamesLoaded = true;
+  }
+
+  function renderRecordTemplateOptions(options = state.recordTemplateDocumentNames) {
+    if (!elements.documentNameTemplate) return;
+    const currentValue = elements.documentNameTemplate.value;
+
+    if (!options.length) {
+      elements.documentNameTemplate.disabled = true;
+      elements.documentNameTemplate.innerHTML = '<option value="">No registered templates available</option>';
+      elements.documentName.value = "";
+      state.autoFilledRecordTemplateDocumentName = false;
+      return;
+    }
+
+    elements.documentNameTemplate.disabled = false;
+    elements.documentNameTemplate.innerHTML = options
+      .map(option => '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>')
+      .join("");
+    elements.documentNameTemplate.value = options.includes(currentValue) ? currentValue : options[0];
+  }
+
+  function buildRecordTemplateDocumentNames(documents) {
+    const byName = new Map();
+    for (const documentRecord of documents) {
+      if (!isRegisteredTemplateDocument(documentRecord)) continue;
+      const documentName = stripTrailingTemplateLabel(documentRecord.document_name);
+      if (!documentName) continue;
+      const key = documentName.toLocaleLowerCase("en-US");
+      if (!byName.has(key)) byName.set(key, documentName);
+    }
+    return [...byName.values()].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+  }
+
+  function isRegisteredTemplateDocument(documentRecord) {
+    return String(documentRecord.document_no || "").startsWith("XQT-")
+      || documentRecord.category === "TEMPLATE";
+  }
+
+  function stripTrailingTemplateLabel(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\s*[-–—:_]?\s*template(?:[_\-\s]?[a-z]{2})?\s*$/i, "")
+      .trim();
+  }
+
+  function syncRecordTemplateSelectionToDocumentName(options = {}) {
+    if (state.selectedCategory !== "R" || !elements.documentNameSource || elements.documentNameSource.value !== "template") return false;
+    if (!elements.documentNameTemplate || elements.documentNameTemplate.disabled) return false;
+
+    const selectedName = elements.documentNameTemplate.value.trim();
+    if (!selectedName) {
+      elements.documentName.value = "";
+      state.autoFilledRecordTemplateDocumentName = false;
+      return false;
+    }
+
+    if (options.force || state.autoFilledRecordTemplateDocumentName || !elements.documentName.value.trim() || elements.documentName.disabled) {
+      elements.documentName.value = selectedName;
+      state.autoFilledRecordTemplateDocumentName = true;
+      return true;
+    }
+    return false;
+  }
+})();

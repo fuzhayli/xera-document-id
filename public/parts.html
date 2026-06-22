@@ -9,6 +9,7 @@
   </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="/protected-boot.js"></script>
   <title>XERA Parts</title>
   <link rel="stylesheet" href="/styles.css?v=edit-modal-scroll-20260608">
   <link rel="stylesheet" href="/parts-table-wrap.css">
@@ -42,7 +43,7 @@
           <button class="primary-btn" id="openPartRequestBtn" type="button">Part Code Request</button>
           <button class="secondary-btn hidden" id="importBtn" type="button">Import Excel</button>
           <input type="file" id="importFileInput" accept=".xlsx" class="hidden">
-          <a class="secondary-btn export-link" href="/api/parts/export.xlsx">Export Excel</a>
+        <button class="secondary-btn export-link" id="partsExportBtn" type="button">Export Excel</button>
           <button class="secondary-btn" id="customExportBtn" type="button">Custom Export</button>
           <a class="secondary-btn" href="/parts-archive.html">Archive</a>
           <a class="secondary-btn hidden" id="deletedItemsLink" href="/deleted-items.html?type=part">Deleted Items</a>
@@ -281,6 +282,7 @@
   </div>
 
   <script src="/auth.js"></script>
+  <script src="/time.js"></script>
   <script src="/ui.js"></script>
   <script src="/parts.js?v=custom-export-20260610"></script>
 </body>

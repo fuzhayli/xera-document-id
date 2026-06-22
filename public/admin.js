@@ -5,6 +5,7 @@ const CATEGORY_LABELS = {
   MR: "MR (Manufacturing Record Document)",
   EC: "EC (Engineering Change)",
   QMS: "QMS (Quality Management)",
+  TEMPLATE: "TEMPLATE (Template / QT)",
   SOP: "SOP (SOP / Instruction)",
   MARKETING: "MARKETING (Marketing Material ID)"
 };
@@ -449,7 +450,7 @@ function renderDocuments(documents) {
       </td>
       <td class="mono-cell">${escapeHtml(documentRecord.document_no)}</td>
       <td class="mono-cell">${escapeHtml(documentRecord.generated_filename)}</td>
-      <td>${escapeHtml(formatCategory(documentRecord.category))}</td>
+      <td>${escapeHtml(formatDocumentCategory(documentRecord))}</td>
       <td>${escapeHtml(documentRecord.document_name)}</td>
       <td>${escapeHtml(documentRecord.checked_by || "-")}</td>
       <td>${formatDateTime(documentRecord.approved_at)}</td>
@@ -458,7 +459,7 @@ function renderDocuments(documents) {
 }
 
 function canUpdateRevision(documentRecord) {
-  return REVISION_CATEGORIES.includes(documentRecord.category)
+  return (REVISION_CATEGORIES.includes(documentRecord.category) || String(documentRecord.document_no || "").startsWith("XQT-"))
     && /^r\d{2}$/.test(documentRecord.revision || "");
 }
 
@@ -695,6 +696,11 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function formatDocumentCategory(documentRecord) {
+  if (String(documentRecord.document_no || "").startsWith("XQT-")) return CATEGORY_LABELS.TEMPLATE || "TEMPLATE";
+  return CATEGORY_LABELS[documentRecord.category] || documentRecord.category || "-";
 }
 
 function formatCategory(category) {

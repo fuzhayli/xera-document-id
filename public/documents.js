@@ -13,6 +13,7 @@ const CATEGORY_LABELS = {
   MR: "MR (Manufacturing Record Document)",
   EC: "EC (Engineering Change)",
   QMS: "QMS (Quality Management)",
+  TEMPLATE: "TEMPLATE (Template / QT)",
   SOP: "SOP (SOP / Instruction)",
   MARKETING: "MARKETING (Marketing Material ID)"
 };
@@ -20,7 +21,7 @@ const REVISION_CATEGORIES = ["D", "MD", "EC", "QMS", "SOP"];
 const DOCUMENT_SEARCH_SCOPE_ID = "documentSearchScope";
 const DOCUMENT_SEARCH_FIELDS = {
   document_no: documentRecord => documentRecord.document_no,
-  category: documentRecord => [documentRecord.category, formatCategory(documentRecord.category)],
+  category: documentRecord => [getDocumentCategoryCode(documentRecord), formatDocumentCategory(documentRecord)],
   year: documentRecord => documentRecord.year_yy,
   revision: documentRecord => documentRecord.revision,
   filename: documentRecord => documentRecord.generated_filename,
@@ -38,6 +39,7 @@ const elements = {
   documentState: document.getElementById("documentState"),
   documentCount: document.getElementById("documentCount"),
   refreshBtn: document.getElementById("refreshBtn"),
+  documentsExportBtn: document.getElementById("documentsExportBtn"),
   openRequestModalBtn: document.getElementById("openRequestModalBtn"),
   openRequestModalPanelBtn: document.getElementById("openRequestModalPanelBtn"),
   adminControlLink: document.getElementById("adminControlLink"),
@@ -83,10 +85,12 @@ const elements = {
 
 document.addEventListener("DOMContentLoaded", init);
 
-// Document List is the public landing page. Logged-in users get request actions;
-// admins additionally see links back to admin-only screens.
 async function init() {
+  state.currentUser = await Auth.requireAuth();
+  if (!state.currentUser) return;
+
   elements.refreshBtn.addEventListener("click", loadDocuments);
+  elements.documentsExportBtn.addEventListener("click", downloadDocumentsExport);
   elements.openRequestModalBtn.addEventListener("click", openRequestModal);
   elements.openRequestModalPanelBtn.addEventListener("click", openRequestModal);
   elements.closeRequestModalBtn.addEventListener("click", closeRequestModal);
@@ -117,11 +121,21 @@ async function init() {
 }
 
 async function applySessionLinks() {
-  const user = await Auth.me();
-  state.currentUser = user;
+  const user = state.currentUser;
   elements.adminControlLink.classList.toggle("hidden", !Auth.hasPermission(user, "document_admin"));
   elements.userManagementLink.classList.toggle("hidden", !Auth.hasPermission(user, "user_admin"));
   elements.deletedItemsLink.classList.toggle("hidden", !Auth.hasPermission(user, "document_admin"));
+}
+
+async function downloadDocumentsExport() {
+  elements.documentsExportBtn.disabled = true;
+  try {
+    await Auth.downloadFile(`${API_BASE}/api/documents/export.xlsx`, "xera-documents.xlsx");
+  } catch (error) {
+    elements.documentState.textContent = error.message;
+  } finally {
+    elements.documentsExportBtn.disabled = false;
+  }
 }
 
 function openRequestModal() {
@@ -188,7 +202,7 @@ function renderDocuments() {
   elements.documentsBody.innerHTML = filtered.map(documentRecord => `
     <tr class="clickable-row" data-document-id="${documentRecord.id}">
       <td class="mono-cell">${escapeHtml(documentRecord.document_no)}</td>
-      <td>${escapeHtml(formatCategory(documentRecord.category))}</td>
+      <td>${escapeHtml(formatDocumentCategory(documentRecord))}</td>
       <td>${escapeHtml(documentRecord.year_yy)}</td>
       <td class="mono-cell">${escapeHtml(documentRecord.revision || "-")}</td>
       <td class="mono-cell filename-cell">${escapeHtml(documentRecord.generated_filename)}</td>
@@ -465,7 +479,7 @@ function getFilteredDocuments() {
   const searchFields = getActiveSearchFields(DOCUMENT_SEARCH_SCOPE_ID, DOCUMENT_SEARCH_FIELDS);
 
   return state.documents.filter(documentRecord => {
-    if (category && documentRecord.category !== category) return false;
+    if (category && getDocumentCategoryCode(documentRecord) !== category) return false;
     if (year && documentRecord.year_yy !== year) return false;
     if (!search) return true;
 
@@ -496,7 +510,7 @@ function flattenSearchValue(value) {
 }
 
 async function apiGet(path) {
-  const response = await fetch(`${API_BASE}${path}`);
+  const response = await fetch(`${API_BASE}${path}`, { headers: Auth.authHeaders() });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || "Request failed.");
   return data;
@@ -535,6 +549,16 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function getDocumentCategoryCode(documentRecord) {
+  if (String(documentRecord.document_no || "").startsWith("XQT-")) return "TEMPLATE";
+  return documentRecord.category || "";
+}
+
+function formatDocumentCategory(documentRecord) {
+  const category = getDocumentCategoryCode(documentRecord);
+  return CATEGORY_LABELS[category] || category || "-";
 }
 
 function formatCategory(category) {

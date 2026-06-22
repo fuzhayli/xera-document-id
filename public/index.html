@@ -470,7 +470,24 @@
           </label>
         </div>
 
-        <label class="field">
+        <div class="grid two hidden" id="documentNameModeFields">
+          <label class="field">
+            <span>Document Name Source</span>
+            <select id="documentNameSource" name="document_name_source">
+              <option value="template">Use ready template</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <label class="field hidden" id="templateNameField">
+            <span>Template Name</span>
+            <select id="documentNameTemplate" name="document_name_template">
+              <option value="">Loading templates...</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field" id="documentNameField">
           <span>Document Name</span>
           <input id="documentName" name="document_name" autocomplete="off" placeholder="Risk Management Report">
         </label>
@@ -581,7 +598,8 @@
   </main>
 
   <script src="/auth.js"></script>
+  <script src="/time.js"></script>
   <script src="/ui.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=record-template-name-20260609-2"></script>
 </body>
 </html>

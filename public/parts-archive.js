@@ -30,6 +30,9 @@ const elements = {
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  const user = await Auth.requireAuth();
+  if (!user) return;
+
   elements.refreshBtn.addEventListener("click", loadArchive);
   elements.filterForm.addEventListener("input", renderArchive);
   elements.filterForm.addEventListener("change", renderArchive);
@@ -129,7 +132,7 @@ function flattenSearchValue(value) {
 }
 
 async function apiGet(path) {
-  const response = await fetch(`${API_BASE}${path}`);
+  const response = await fetch(`${API_BASE}${path}`, { headers: Auth.authHeaders() });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || "Request failed.");
   return data;

@@ -71,6 +71,9 @@ function createDatabase(config) {
     },
 
     async transaction(callback) {
+      const store = storage.getStore();
+      if (store && store.tx) return callback();
+
       const tx = await client.transaction("write");
       return storage.run({ tx }, async () => {
         try {

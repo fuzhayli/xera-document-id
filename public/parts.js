@@ -48,6 +48,7 @@ const elements = {
   apiStatus: document.getElementById("apiStatus"),
   partsState: document.getElementById("partsState"),
   refreshBtn: document.getElementById("refreshBtn"),
+  partsExportBtn: document.getElementById("partsExportBtn"),
   materialTabBtn: document.getElementById("materialTabBtn"),
   hardwareTabBtn: document.getElementById("hardwareTabBtn"),
   materialFilterForm: document.getElementById("materialFilterForm"),
@@ -114,7 +115,11 @@ const elements = {
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  state.currentUser = await Auth.requireAuth();
+  if (!state.currentUser) return;
+
   elements.refreshBtn.addEventListener("click", loadData);
+  elements.partsExportBtn.addEventListener("click", downloadPartsExport);
   elements.materialTabBtn.addEventListener("click", () => setTab("materials"));
   elements.hardwareTabBtn.addEventListener("click", () => setTab("hardware"));
   elements.materialFilterForm.addEventListener("input", renderParts);
@@ -183,7 +188,7 @@ function handlePartRequestMessage(event) {
 
 async function checkUserRole() {
   try {
-    const user = await Auth.me();
+    const user = state.currentUser;
     state.currentUser = user;
     if (Auth.hasPermission(user, "part_admin")) {
       elements.importBtn.classList.remove("hidden");
@@ -196,6 +201,17 @@ async function checkUserRole() {
     state.currentUser = null;
     elements.importBtn.classList.add("hidden");
     elements.deletedItemsLink.classList.add("hidden");
+  }
+}
+
+async function downloadPartsExport() {
+  elements.partsExportBtn.disabled = true;
+  try {
+    await Auth.downloadFile(`${API_BASE}/api/parts/export.xlsx`, "xera-parts.xlsx");
+  } catch (error) {
+    showMessage(error.message, "error");
+  } finally {
+    elements.partsExportBtn.disabled = false;
   }
 }
 
@@ -784,10 +800,10 @@ function isPartInCustomExportDateRange(part, startDate, endDate) {
 function dateOnly(value) {
   if (!value) return "";
   const text = String(value);
-  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const date = new Date(text);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+  return XeraTime.toDateValue(date);
 }
 
 function getDownloadFilename(response, fallback) {
@@ -837,7 +853,7 @@ function sanitizeSequenceValue(value) {
 }
 
 async function apiGet(path) {
-  const response = await fetch(`${API_BASE}${path}`);
+  const response = await fetch(`${API_BASE}${path}`, { headers: Auth.authHeaders() });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || "Request failed.");
   return data;

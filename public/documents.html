@@ -9,6 +9,7 @@
   </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="/protected-boot.js"></script>
   <title>XERA Documents</title>
   <link rel="stylesheet" href="/styles.css?v=edit-modal-scroll-20260608">
 </head>
@@ -40,7 +41,7 @@
         </div>
         <div class="refresh-row">
           <button class="primary-btn" id="openRequestModalPanelBtn" type="button">Document ID Request</button>
-          <a class="secondary-btn export-link" href="/api/documents/export.xlsx">Export Excel</a>
+        <button class="secondary-btn export-link" id="documentsExportBtn" type="button">Export Excel</button>
           <a class="secondary-btn" href="/archive.html">Archive</a>
           <a class="secondary-btn hidden" id="deletedItemsLink" href="/deleted-items.html?type=document">Deleted Items</a>
           <button class="secondary-btn" id="refreshBtn" type="button">Refresh</button>
@@ -83,6 +84,7 @@
             <option value="EC">EC (Engineering Change)</option>
             <option value="MARKETING">MARKETING (Marketing Material ID)</option>
             <option value="QMS">QMS (Quality Management)</option>
+            <option value="TEMPLATE">TEMPLATE (Template / QT)</option>
             <option value="SOP">SOP (SOP / Instruction)</option>
           </select>
         </label>
@@ -237,6 +239,6 @@
 
   <script src="/auth.js"></script>
   <script src="/ui.js"></script>
-  <script src="/documents.js?v=edit-modal-scroll-20260608"></script>
+  <script src="/documents.js?v=template-ui-20260608"></script>
 </body>
 </html>

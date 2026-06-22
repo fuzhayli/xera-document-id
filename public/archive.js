@@ -9,13 +9,14 @@ const CATEGORY_LABELS = {
   MR: "MR (Manufacturing Record Document)",
   EC: "EC (Engineering Change)",
   QMS: "QMS (Quality Management)",
+  TEMPLATE: "TEMPLATE (Template / QT)",
   SOP: "SOP (SOP / Instruction)",
   MARKETING: "MARKETING (Marketing Material ID)"
 };
 const DOCUMENT_ARCHIVE_SEARCH_SCOPE_ID = "documentArchiveSearchScope";
 const DOCUMENT_ARCHIVE_SEARCH_FIELDS = {
   document_no: record => record.document_no,
-  category: record => [record.category, formatCategory(record.category)],
+  category: record => [getDocumentCategoryCode(record), formatDocumentCategory(record)],
   year: record => record.year_yy,
   old_revision: record => record.revision,
   new_revision: record => record.next_revision,
@@ -44,6 +45,9 @@ const elements = {
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+  const user = await Auth.requireAuth();
+  if (!user) return;
+
   elements.refreshBtn.addEventListener("click", loadArchive);
   elements.filterForm.addEventListener("input", renderArchive);
   elements.filterForm.addEventListener("change", renderArchive);
@@ -96,7 +100,7 @@ function renderArchive() {
   elements.archiveBody.innerHTML = filtered.map(record => `
     <tr>
       <td class="mono-cell">${escapeHtml(record.document_no)}</td>
-      <td>${escapeHtml(formatCategory(record.category))}</td>
+      <td>${escapeHtml(formatDocumentCategory(record))}</td>
       <td>${escapeHtml(record.year_yy)}</td>
       <td class="mono-cell">${escapeHtml(record.revision || "-")}</td>
       <td class="mono-cell">${escapeHtml(record.next_revision || "-")}</td>
@@ -117,7 +121,7 @@ function getFilteredArchive() {
   const searchFields = getActiveSearchFields(DOCUMENT_ARCHIVE_SEARCH_SCOPE_ID, DOCUMENT_ARCHIVE_SEARCH_FIELDS);
 
   return state.archive.filter(record => {
-    if (category && record.category !== category) return false;
+    if (category && getDocumentCategoryCode(record) !== category) return false;
     if (year && record.year_yy !== year) return false;
     if (!search) return true;
 
@@ -148,7 +152,7 @@ function flattenSearchValue(value) {
 }
 
 async function apiGet(path) {
-  const response = await fetch(path);
+  const response = await fetch(path, { headers: Auth.authHeaders() });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || "Request failed.");
   return data;
@@ -173,6 +177,16 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function getDocumentCategoryCode(record) {
+  if (String(record.document_no || "").startsWith("XQT-")) return "TEMPLATE";
+  return record.category || "";
+}
+
+function formatDocumentCategory(record) {
+  const category = getDocumentCategoryCode(record);
+  return CATEGORY_LABELS[category] || category || "-";
 }
 
 function formatCategory(category) {

@@ -71,6 +71,25 @@
     }
   }
 
+  async function downloadFile(url, fallbackName) {
+    const response = await fetch(url, { headers: authHeaders() });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || "Download failed.");
+    }
+
+    const disposition = response.headers.get("content-disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filenameMatch ? filenameMatch[1] : fallbackName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
+
   function normalizeRole(role) {
     const normalized = String(role || "user").trim().toLowerCase().replace(/[\s-]+/g, "_");
     return ROLE_LABELS[normalized] ? normalized : "user";
@@ -117,6 +136,7 @@
     me,
     requireAuth,
     logout,
+    downloadFile,
     hasPermission,
     hasAnyPermission,
     isAdmin,
