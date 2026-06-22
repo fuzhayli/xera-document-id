@@ -11,7 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="/protected-boot.js"></script>
   <title>XERA Documents</title>
-  <link rel="stylesheet" href="/styles.css?v=edit-modal-scroll-20260608">
+  <link rel="stylesheet" href="/styles.css?v=sortable-columns-20260622">
 </head>
 <body>
   <header class="topbar">
@@ -112,18 +112,18 @@
         <table>
           <thead>
             <tr>
-              <th>Document No</th>
-              <th>Category</th>
-              <th>Year</th>
-              <th>Revision</th>
-              <th>Filename</th>
-              <th>Document Name</th>
-              <th>Reference</th>
-              <th>Written By</th>
-              <th>Creation Date</th>
-              <th>Checked By</th>
-              <th>Reviewed At</th>
-              <th>Revision Updated</th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="document_no">Document No<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="category">Category<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="year">Year<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="revision">Revision<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="filename">Filename<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="document_name">Document Name<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="reference">Reference<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="written_by">Written By<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="creation_date">Creation Date<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="checked_by">Checked By<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="reviewed_at">Reviewed At<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-document-sort="revision_updated">Revision Updated<span class="sort-indicator" aria-hidden="true"></span></button></th>
             </tr>
           </thead>
           <tbody id="documentsBody">
@@ -239,6 +239,6 @@
 
   <script src="/auth.js"></script>
   <script src="/ui.js"></script>
-  <script src="/documents.js?v=template-ui-20260608"></script>
+  <script src="/documents.js?v=sortable-columns-20260622"></script>
 </body>
 </html>

@@ -1633,6 +1633,79 @@ th {
   letter-spacing: 0;
 }
 
+.sortable-header {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sortable-header:hover,
+.sortable-header:focus-visible {
+  color: var(--primary);
+}
+
+.sortable-header:focus-visible {
+  outline: 2px solid rgba(255, 26, 83, .28);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.sort-indicator {
+  width: 8px;
+  height: 12px;
+  flex: 0 0 8px;
+  position: relative;
+  opacity: .45;
+}
+
+.sort-indicator::before,
+.sort-indicator::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+
+.sort-indicator::before {
+  top: 0;
+  border-bottom: 5px solid currentColor;
+}
+
+.sort-indicator::after {
+  bottom: 0;
+  border-top: 5px solid currentColor;
+}
+
+.sortable-header[data-sort-direction="asc"],
+.sortable-header[data-sort-direction="desc"] {
+  color: var(--primary);
+}
+
+.sortable-header[data-sort-direction="asc"] .sort-indicator,
+.sortable-header[data-sort-direction="desc"] .sort-indicator {
+  opacity: 1;
+}
+
+.sortable-header[data-sort-direction="asc"] .sort-indicator::after,
+.sortable-header[data-sort-direction="desc"] .sort-indicator::before {
+  opacity: .2;
+}
+
 td {
   color: #344054;
 }

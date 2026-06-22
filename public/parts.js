@@ -4,6 +4,8 @@ const state = {
   activeTab: "materials",
   currentUser: null,
   selectedPart: null,
+  materialSort: { field: "", direction: "" },
+  hardwareSort: { field: "", direction: "" },
   customExportOpen: false,
   customExportSelectedIds: new Set()
 };
@@ -43,6 +45,21 @@ const HARDWARE_SEARCH_FIELDS = {
   specification: row => row.specification,
   excel_row: row => row.excel_row
 };
+const MATERIAL_SORT_FIELDS = {
+  part_number: part => part.part_number,
+  part_name: part => normalizeDisplayText(part.part_name),
+  description: part => normalizeDisplayText(part.description),
+  main_category: part => normalizeDisplayText(part.main_category),
+  sub_category: part => normalizeDisplayText(part.sub_category)
+};
+const HARDWARE_SORT_FIELDS = {
+  group: row => normalizeDisplayText(row.group_name),
+  serial: row => row.serial_no,
+  name: row => normalizeDisplayText(row.part_name),
+  specification: row => normalizeDisplayText(row.specification),
+  excel_row: row => row.source_row || row.excel_row
+};
+const SORT_COLLATOR = new Intl.Collator("tr", { numeric: true, sensitivity: "base" });
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -109,7 +126,9 @@ const elements = {
   partDeleteBtn: document.getElementById("partDeleteBtn"),
   partDeleteConfirm: document.getElementById("partDeleteConfirm"),
   cancelPartDeleteBtn: document.getElementById("cancelPartDeleteBtn"),
-  confirmPartDeleteBtn: document.getElementById("confirmPartDeleteBtn")
+  confirmPartDeleteBtn: document.getElementById("confirmPartDeleteBtn"),
+  materialSortButtons: document.querySelectorAll("[data-material-sort]"),
+  hardwareSortButtons: document.querySelectorAll("[data-hardware-sort]")
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -153,6 +172,8 @@ async function init() {
 
   elements.importBtn.addEventListener("click", () => elements.importFileInput.click());
   elements.importFileInput.addEventListener("change", handleImportUpload);
+  elements.materialSortButtons.forEach(button => button.addEventListener("click", handleMaterialSortClick));
+  elements.hardwareSortButtons.forEach(button => button.addEventListener("click", handleHardwareSortClick));
 
   await checkUserRole();
   await loadData();
@@ -332,7 +353,8 @@ function populateSelect(select, values) {
 }
 
 function renderParts() {
-  const filtered = getFilteredParts();
+  const filtered = applySort(getFilteredParts(), state.materialSort, MATERIAL_SORT_FIELDS);
+  updateSortHeaders(elements.materialSortButtons, state.materialSort, "materialSort");
   elements.partsCount.textContent = state.customExportOpen
     ? `${filtered.length} of ${state.parts.length} records, ${state.customExportSelectedIds.size} selected`
     : `${filtered.length} of ${state.parts.length} records`;
@@ -352,6 +374,12 @@ function renderParts() {
       <td class="part-category-cell">${escapeHtml(normalizeDisplayText(part.sub_category || "-"))}</td>
     </tr>
   `).join("");
+}
+
+function handleMaterialSortClick(event) {
+  const field = event.currentTarget.dataset.materialSort;
+  state.materialSort = getNextSortState(state.materialSort, field);
+  renderParts();
 }
 
 function openCustomExportPanel() {
@@ -697,7 +725,8 @@ function canRequestPartRevision(part) {
 }
 
 function renderHardware() {
-  const filtered = getFilteredHardware();
+  const filtered = applySort(getFilteredHardware(), state.hardwareSort, HARDWARE_SORT_FIELDS);
+  updateSortHeaders(elements.hardwareSortButtons, state.hardwareSort, "hardwareSort");
   elements.hardwareCount.textContent = `${filtered.length} of ${state.hardware.length} records`;
 
   if (filtered.length === 0) {
@@ -714,6 +743,12 @@ function renderHardware() {
       <td class="mono-cell">${escapeHtml(row.source_row)}</td>
     </tr>
   `).join("");
+}
+
+function handleHardwareSortClick(event) {
+  const field = event.currentTarget.dataset.hardwareSort;
+  state.hardwareSort = getNextSortState(state.hardwareSort, field);
+  renderHardware();
 }
 
 function getFilteredParts() {
@@ -759,6 +794,7 @@ function clearMaterialFilters() {
   elements.mainFilter.value = "";
   elements.subFilter.value = "";
   elements.revisionModeFilter.value = "";
+  state.materialSort = { field: "", direction: "" };
   window.XeraSearchScopes?.clear(MATERIAL_SEARCH_SCOPE_ID);
   renderParts();
 }
@@ -766,6 +802,7 @@ function clearMaterialFilters() {
 function clearHardwareFilters() {
   elements.hardwareSearchInput.value = "";
   elements.hardwareGroupFilter.value = "";
+  state.hardwareSort = { field: "", direction: "" };
   window.XeraSearchScopes?.clear(HARDWARE_SEARCH_SCOPE_ID);
   renderHardware();
 }
@@ -782,6 +819,55 @@ function matchesScopedSearch(record, search, searchFields, searchFieldMap) {
 
 function flattenSearchValue(value) {
   return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
+}
+
+function getNextSortState(current, field) {
+  if (!field) return { field: "", direction: "" };
+  if (current.field !== field) return { field, direction: "asc" };
+  if (current.direction === "asc") return { field, direction: "desc" };
+  return { field: "", direction: "" };
+}
+
+function updateSortHeaders(buttons, sortState, datasetName) {
+  buttons.forEach(button => {
+    const isActive = button.dataset[datasetName] === sortState.field && sortState.direction;
+    const direction = isActive ? sortState.direction : "";
+    button.dataset.sortDirection = direction;
+    button.closest("th")?.setAttribute("aria-sort", direction === "asc"
+      ? "ascending"
+      : direction === "desc"
+        ? "descending"
+        : "none");
+  });
+}
+
+function applySort(records, sortState, sortFields) {
+  const sortValue = sortFields[sortState.field];
+  if (!sortValue || !sortState.direction) return records;
+  return records
+    .map((record, index) => ({ record, index }))
+    .sort((left, right) => {
+      const leftValue = normalizeSortValue(sortValue(left.record));
+      const rightValue = normalizeSortValue(sortValue(right.record));
+      if (leftValue.empty && rightValue.empty) return left.index - right.index;
+      if (leftValue.empty) return 1;
+      if (rightValue.empty) return -1;
+      const result = SORT_COLLATOR.compare(String(leftValue.value), String(rightValue.value));
+      if (result === 0) return left.index - right.index;
+      return sortState.direction === "desc" ? -result : result;
+    })
+    .map(item => item.record);
+}
+
+function normalizeSortValue(value) {
+  const firstValue = Array.isArray(value)
+    ? value.find(item => String(item ?? "").trim())
+    : value;
+  const text = String(firstValue ?? "").trim();
+  return {
+    empty: !text || text === "-",
+    value: text
+  };
 }
 
 function getPartCreatedBy(part) {

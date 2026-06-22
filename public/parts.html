@@ -11,7 +11,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="/protected-boot.js"></script>
   <title>XERA Parts</title>
-  <link rel="stylesheet" href="/styles.css?v=edit-modal-scroll-20260608">
+  <link rel="stylesheet" href="/styles.css?v=sortable-columns-20260622">
   <link rel="stylesheet" href="/parts-table-wrap.css">
 </head>
 <body>
@@ -171,11 +171,11 @@
         <table class="parts-table materials-table">
           <thead>
             <tr>
-              <th>Part Number</th>
-              <th>Part Name</th>
-              <th>Description</th>
-              <th>Main Category</th>
-              <th>Sub Category</th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-material-sort="part_number">Part Number<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-material-sort="part_name">Part Name<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-material-sort="description">Description<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-material-sort="main_category">Main Category<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-material-sort="sub_category">Sub Category<span class="sort-indicator" aria-hidden="true"></span></button></th>
             </tr>
           </thead>
           <tbody id="partsBody">
@@ -196,11 +196,11 @@
         <table class="parts-table hardware-reference-table">
           <thead>
             <tr>
-              <th>Group</th>
-              <th>Serial</th>
-              <th>Name</th>
-              <th>Specification</th>
-              <th>Excel Row</th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-hardware-sort="group">Group<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-hardware-sort="serial">Serial<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-hardware-sort="name">Name<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-hardware-sort="specification">Specification<span class="sort-indicator" aria-hidden="true"></span></button></th>
+              <th aria-sort="none"><button class="sortable-header" type="button" data-hardware-sort="excel_row">Excel Row<span class="sort-indicator" aria-hidden="true"></span></button></th>
             </tr>
           </thead>
           <tbody id="hardwareBody">
@@ -284,6 +284,6 @@
   <script src="/auth.js"></script>
   <script src="/time.js"></script>
   <script src="/ui.js"></script>
-  <script src="/parts.js?v=custom-export-20260610"></script>
+  <script src="/parts.js?v=sortable-columns-20260622"></script>
 </body>
 </html>

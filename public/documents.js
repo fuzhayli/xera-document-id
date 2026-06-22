@@ -1,7 +1,8 @@
 const state = {
   documents: [],
   currentUser: null,
-  selectedDocument: null
+  selectedDocument: null,
+  sort: { field: "", direction: "" }
 };
 
 const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
@@ -33,6 +34,21 @@ const DOCUMENT_SEARCH_FIELDS = {
   reviewed_at: documentRecord => [documentRecord.approved_at, documentRecord.approved_at ? formatDateTime(documentRecord.approved_at) : ""],
   revision_updated: documentRecord => [documentRecord.revision_updated_at, documentRecord.revision_updated_at ? formatDateTime(documentRecord.revision_updated_at) : ""]
 };
+const DOCUMENT_SORT_FIELDS = {
+  document_no: documentRecord => documentRecord.document_no,
+  category: documentRecord => formatCategory(documentRecord.category),
+  year: documentRecord => documentRecord.year_yy,
+  revision: documentRecord => documentRecord.revision,
+  filename: documentRecord => documentRecord.generated_filename,
+  document_name: documentRecord => documentRecord.document_name,
+  reference: documentRecord => documentRecord.reference_value,
+  written_by: documentRecord => documentRecord.written_by,
+  creation_date: documentRecord => documentRecord.creation_date,
+  checked_by: documentRecord => documentRecord.checked_by,
+  reviewed_at: documentRecord => documentRecord.approved_at,
+  revision_updated: documentRecord => documentRecord.revision_updated_at
+};
+const SORT_COLLATOR = new Intl.Collator("tr", { numeric: true, sensitivity: "base" });
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -80,7 +96,8 @@ const elements = {
   categoryFilter: document.getElementById("categoryFilter"),
   yearFilter: document.getElementById("yearFilter"),
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
-  documentsBody: document.getElementById("documentsBody")
+  documentsBody: document.getElementById("documentsBody"),
+  documentSortButtons: document.querySelectorAll("[data-document-sort]")
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -116,6 +133,7 @@ async function init() {
   elements.filterForm.addEventListener("change", renderDocuments);
   elements.clearFiltersBtn.addEventListener("click", clearFilters);
   elements.documentsBody.addEventListener("click", handleDocumentAction);
+  elements.documentSortButtons.forEach(button => button.addEventListener("click", handleDocumentSortClick));
   await applySessionLinks();
   await loadDocuments();
 }
@@ -191,7 +209,8 @@ function populateYearFilter(documents) {
 }
 
 function renderDocuments() {
-  const filtered = getFilteredDocuments();
+  const filtered = applySort(getFilteredDocuments(), state.sort, DOCUMENT_SORT_FIELDS);
+  updateDocumentSortHeaders();
   elements.documentCount.textContent = `${filtered.length} of ${state.documents.length} records`;
 
   if (filtered.length === 0) {
@@ -215,6 +234,25 @@ function renderDocuments() {
       <td>${formatDateTime(documentRecord.revision_updated_at)}</td>
     </tr>
   `).join("");
+}
+
+function handleDocumentSortClick(event) {
+  const field = event.currentTarget.dataset.documentSort;
+  state.sort = getNextSortState(state.sort, field);
+  renderDocuments();
+}
+
+function updateDocumentSortHeaders() {
+  elements.documentSortButtons.forEach(button => {
+    const isActive = button.dataset.documentSort === state.sort.field && state.sort.direction;
+    const direction = isActive ? state.sort.direction : "";
+    button.dataset.sortDirection = direction;
+    button.closest("th")?.setAttribute("aria-sort", direction === "asc"
+      ? "ascending"
+      : direction === "desc"
+        ? "descending"
+        : "none");
+  });
 }
 
 async function handleDocumentAction(event) {
@@ -491,6 +529,7 @@ function clearFilters() {
   elements.searchInput.value = "";
   elements.categoryFilter.value = "";
   elements.yearFilter.value = "";
+  state.sort = { field: "", direction: "" };
   window.XeraSearchScopes?.clear(DOCUMENT_SEARCH_SCOPE_ID);
   renderDocuments();
 }
@@ -507,6 +546,42 @@ function matchesScopedSearch(record, search, searchFields) {
 
 function flattenSearchValue(value) {
   return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
+}
+
+function getNextSortState(current, field) {
+  if (!field) return { field: "", direction: "" };
+  if (current.field !== field) return { field, direction: "asc" };
+  if (current.direction === "asc") return { field, direction: "desc" };
+  return { field: "", direction: "" };
+}
+
+function applySort(records, sortState, sortFields) {
+  const sortValue = sortFields[sortState.field];
+  if (!sortValue || !sortState.direction) return records;
+  return records
+    .map((record, index) => ({ record, index }))
+    .sort((left, right) => {
+      const leftValue = normalizeSortValue(sortValue(left.record));
+      const rightValue = normalizeSortValue(sortValue(right.record));
+      if (leftValue.empty && rightValue.empty) return left.index - right.index;
+      if (leftValue.empty) return 1;
+      if (rightValue.empty) return -1;
+      const result = SORT_COLLATOR.compare(String(leftValue.value), String(rightValue.value));
+      if (result === 0) return left.index - right.index;
+      return sortState.direction === "desc" ? -result : result;
+    })
+    .map(item => item.record);
+}
+
+function normalizeSortValue(value) {
+  const firstValue = Array.isArray(value)
+    ? value.find(item => String(item ?? "").trim())
+    : value;
+  const text = String(firstValue ?? "").trim();
+  return {
+    empty: !text || text === "-",
+    value: text
+  };
 }
 
 async function apiGet(path) {
