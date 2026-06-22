@@ -94,6 +94,7 @@ const elements = {
   documentName: document.getElementById("documentName"),
   writtenBy: document.getElementById("writtenBy"),
   creationDate: document.getElementById("creationDate"),
+  creationDateDisplay: document.getElementById("creationDateDisplay"),
   revision: document.getElementById("revision"),
   revisionField: document.getElementById("revisionField"),
   submitBtn: document.getElementById("submitBtn"),
@@ -243,7 +244,7 @@ async function init() {
   currentUser = await Auth.requireAuth();
   if (!currentUser) return;
   applyCurrentUser();
-  elements.creationDate.value = XeraTime.todayDateValue();
+  syncCreationDate();
 
   bindEvents();
 
@@ -286,9 +287,9 @@ function bindEvents() {
   elements.form.addEventListener("change", event => {
     hideSuccessActions();
     applyTemplateDependentFields();
-    if (state.selectedCategory === "EC" && [elements.extraCode, elements.creationDate].includes(event.target)) {
+    if (state.selectedCategory === "EC" && event.target === elements.extraCode) {
       normalizeEcOrderInput();
-      applyEcOrderDocumentName({ force: event.target === elements.extraCode });
+      applyEcOrderDocumentName({ force: true });
     }
     if (state.selectedCategory === "SOP" && event.target === elements.extraType) {
       applySopIncomingDocumentName({ force: true });
@@ -676,7 +677,7 @@ function findEcOrderDocumentName(order) {
 }
 
 function getSelectedYearYy() {
-  const creationDate = elements.creationDate.value || XeraTime.todayDateValue();
+  const creationDate = syncCreationDate();
   return creationDate.slice(2, 4);
 }
 
@@ -748,6 +749,7 @@ function updateReferenceLabel() {
 
 function collectFormData() {
   const isTemplate = state.selectedCategory === "TEMPLATE";
+  const creationDate = syncCreationDate();
   return {
     category: isTemplate ? "QMS" : (state.selectedCategory || ""),
     document_no: state.documentNoTouched ? elements.documentNo.value : "",
@@ -755,7 +757,7 @@ function collectFormData() {
     reference_value: elements.referenceValue.value,
     document_name: elements.documentName.value,
     written_by: currentUser ? currentUser.display_name : elements.writtenBy.value,
-    creation_date: elements.creationDate.value,
+    creation_date: creationDate,
     revision: elements.revision.value || "r00",
     control_status: "controlled",
     detail_type: isTemplate ? "QT" : elements.extraType.value,
@@ -1121,12 +1123,19 @@ function clearForm(options = {}) {
   elements.referenceValue.value = "";
   elements.documentName.value = "";
   elements.revision.value = "r00";
-  elements.creationDate.value = XeraTime.todayDateValue();
+  syncCreationDate();
   hideMessage();
   hideSuccessActions();
   if (state.selectedCategory) applyCategoryDefaults();
   syncCategoryPanel();
   updatePreview();
+}
+
+function syncCreationDate() {
+  const today = XeraTime.todayDateValue();
+  elements.creationDate.value = today;
+  if (elements.creationDateDisplay) elements.creationDateDisplay.textContent = today || "Today";
+  return today;
 }
 
 function resetRequestScreen() {

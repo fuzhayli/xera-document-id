@@ -422,7 +422,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/preview") {
       const user = await resolveUser(req);
       const body = await readJson(req);
-      const normalized = normalizeRequestInput(body, user);
+      const normalized = normalizeRequestInput(body, user, { forceTodayCreationDate: true });
       const result = await buildPreview(normalized, { includeNextSequence: true });
       return sendJson(res, result.valid ? 200 : 422, result);
     }
@@ -3154,19 +3154,24 @@ function columnLettersToNumber(letters) {
   return number;
 }
 
-function normalizeRequestInput(body, user = null) {
+function normalizeRequestInput(body, user = null, options = {}) {
   // Frontend labels changed over time; accept old and new payload names here
   // so older forms and tests keep working.
-  const creationDate = normalizeDate(body.creation_date || body.creationDate || todayDate());
+  const creationDate = options.forceTodayCreationDate
+    ? todayDate()
+    : normalizeDate(body.creation_date || body.creationDate || todayDate());
   const category = String(body.category || "").trim().toUpperCase();
   const revision = normalizeRevision(body.revision || "r00");
   const detailType = sanitizeCompact(body.detail_type || body.detailType || body.extra_type || body.extraType || "");
   const detailCode = sanitizeCompact(body.detail_code || body.detailCode || body.extra_code || body.extraCode || "");
   const detailVersion = sanitizeCompact(body.detail_version || body.detailVersion || body.version || "1");
+  const yearYy = options.forceTodayCreationDate
+    ? creationDate.slice(2, 4)
+    : String(body.year_yy || body.yearYY || creationDate.slice(2, 4)).padStart(2, "0");
   return {
     category,
     company_code: sanitizeCompact(body.company_code || body.companyCode || "X"),
-    year_yy: String(body.year_yy || body.yearYY || creationDate.slice(2, 4)).padStart(2, "0"),
+    year_yy: yearYy,
     revision,
     document_no: sanitizeText(body.document_no || body.documentNo || ""),
     reference_type: sanitizeCompact(body.reference_type || body.referenceType || "model").toLowerCase(),
@@ -3283,7 +3288,7 @@ function validateInput(input) {
 }
 
 async function createDocumentRequest(user, body) {
-  const normalized = normalizeRequestInput(body, user);
+  const normalized = normalizeRequestInput(body, user, { forceTodayCreationDate: true });
   const preview = await buildPreview(normalized, { includeNextSequence: true });
   if (!preview.valid) throw httpError(422, "validation_failed", preview.errors.join(" "));
   normalized.document_no = preview.document_no_preview;

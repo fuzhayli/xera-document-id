@@ -15,7 +15,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>XERA Dashboard</title>
   <script src="/protected-boot.js"></script>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=auto-creation-date-20260622">
 </head>
 <body>
   <header class="topbar">
@@ -498,9 +498,10 @@
             <input id="writtenBy" name="written_by" autocomplete="name" readonly placeholder="Full name from user registration">
           </label>
 
-          <label class="field">
+          <label class="field readonly-date-field">
             <span>Creation Date</span>
-            <input id="creationDate" name="creation_date" type="date">
+            <input id="creationDate" name="creation_date" type="hidden">
+            <output id="creationDateDisplay" class="readonly-field-value">Today</output>
           </label>
 
           <label class="field" id="revisionField">
@@ -600,6 +601,6 @@
   <script src="/auth.js"></script>
   <script src="/time.js"></script>
   <script src="/ui.js"></script>
-  <script src="/app.js?v=record-template-name-20260609-2"></script>
+  <script src="/app.js?v=auto-creation-date-20260622"></script>
 </body>
 </html>

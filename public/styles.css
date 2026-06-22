@@ -1114,6 +1114,19 @@ p {
   cursor: not-allowed;
 }
 
+.readonly-field-value {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  width: 100%;
+  padding: 0 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font-weight: 650;
+}
+
 .search-field-control {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
