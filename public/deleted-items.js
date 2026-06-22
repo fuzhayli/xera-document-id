@@ -18,6 +18,7 @@ const elements = {
   currentAdminName: document.getElementById("currentAdminName"),
   deletedState: document.getElementById("deletedState"),
   deletedCount: document.getElementById("deletedCount"),
+  releasedPartCodesLink: document.getElementById("releasedPartCodesLink"),
   refreshBtn: document.getElementById("refreshBtn"),
   filterForm: document.getElementById("filterForm"),
   searchInput: document.getElementById("searchInput"),
@@ -30,6 +31,7 @@ const elements = {
   closeDeletedActionBtn: document.getElementById("closeDeletedActionBtn"),
   cancelDeletedActionBtn: document.getElementById("cancelDeletedActionBtn"),
   republishDeletedItemBtn: document.getElementById("republishDeletedItemBtn"),
+  releasePartCodeBtn: document.getElementById("releasePartCodeBtn"),
   deletedActionTitle: document.getElementById("deletedActionTitle"),
   deletedActionMeta: document.getElementById("deletedActionMeta"),
   deletedActionDetails: document.getElementById("deletedActionDetails")
@@ -47,6 +49,9 @@ async function init() {
 
   state.currentUser = user;
   elements.currentAdminName.textContent = `${user.display_name} (${Auth.roleLabel(user)})`;
+  if (Auth.hasPermission(user, "part_admin")) {
+    elements.releasedPartCodesLink.classList.remove("hidden");
+  }
   populateTypeFilter(user);
   elements.refreshBtn.addEventListener("click", loadDeletedItems);
   elements.filterForm.addEventListener("input", renderDeletedItems);
@@ -59,6 +64,7 @@ async function init() {
   elements.closeDeletedActionBtn.addEventListener("click", closeDeletedActionModal);
   elements.cancelDeletedActionBtn.addEventListener("click", closeDeletedActionModal);
   elements.republishDeletedItemBtn.addEventListener("click", republishSelectedDeletedItem);
+  elements.releasePartCodeBtn.addEventListener("click", releaseSelectedPartCode);
   await loadDeletedItems();
 }
 
@@ -154,6 +160,8 @@ function openDeletedActionModal(itemId) {
   elements.deletedActionMeta.textContent = `${formatType(item.entity_type)} | Deleted ${formatDateTime(item.deleted_at)}`;
   elements.deletedActionDetails.innerHTML = buildDeletedActionDetails(item, record);
   elements.republishDeletedItemBtn.disabled = !canRepublishItem(item);
+  elements.releasePartCodeBtn.classList.toggle("hidden", !canReleasePartCode(item));
+  elements.releasePartCodeBtn.disabled = !canReleasePartCode(item);
   elements.deletedActionModal.classList.remove("hidden");
   document.body.classList.add("modal-open");
 }
@@ -163,6 +171,8 @@ function closeDeletedActionModal() {
   elements.deletedActionModal.classList.add("hidden");
   document.body.classList.remove("modal-open");
   elements.republishDeletedItemBtn.disabled = false;
+  elements.releasePartCodeBtn.disabled = false;
+  elements.releasePartCodeBtn.classList.add("hidden");
 }
 
 async function republishSelectedDeletedItem() {
@@ -187,6 +197,32 @@ async function republishSelectedDeletedItem() {
   }
 }
 
+async function releaseSelectedPartCode() {
+  const item = state.selectedItem;
+  if (!item || !canReleasePartCode(item)) return;
+
+  const label = item.display_key || `Part #${item.entity_id}`;
+  const confirmed = window.confirm(`${label} will stay deleted, but its part code will become available for new requests. Continue?`);
+  if (!confirmed) return;
+
+  elements.releasePartCodeBtn.disabled = true;
+  elements.republishDeletedItemBtn.disabled = true;
+  showMessage("", "hidden");
+  elements.deletedState.textContent = "Releasing code";
+
+  try {
+    await apiPost(`/api/admin/deleted-items/${item.id}/release-part-code`, {});
+    showMessage(`${label} released for reuse.`, "success");
+    closeDeletedActionModal();
+    await loadDeletedItems();
+  } catch (error) {
+    showMessage(error.message, "error");
+    elements.deletedState.textContent = "Check required";
+    elements.releasePartCodeBtn.disabled = false;
+    elements.republishDeletedItemBtn.disabled = !canRepublishItem(item);
+  }
+}
+
 function buildDeletedActionDetails(item, record) {
   const rows = [
     ["Type", formatType(item.entity_type)],
@@ -194,7 +230,8 @@ function buildDeletedActionDetails(item, record) {
     ["Name", getRecordName(item, record)],
     ["Details", getRecordDetails(item, record)],
     ["Deleted By", item.deleted_by || "-"],
-    ["Deleted At", formatDateTime(item.deleted_at)]
+    ["Deleted At", formatDateTime(item.deleted_at)],
+    ["Code Reuse", item.entity_type === "part" ? "Locked until released by Part List Admin" : "-"]
   ];
 
   return rows.map(([label, value]) => `
@@ -209,6 +246,13 @@ function canRepublishItem(item) {
   if (item.entity_type === "document") return Auth.hasPermission(state.currentUser, "document_admin");
   if (item.entity_type === "part") return Auth.hasPermission(state.currentUser, "part_admin");
   return false;
+}
+
+function canReleasePartCode(item) {
+  return item.entity_type === "part"
+    && Auth.hasPermission(state.currentUser, "part_admin")
+    && !item.released_for_reuse_at
+    && !item.republished_at;
 }
 
 function getFilteredItems() {

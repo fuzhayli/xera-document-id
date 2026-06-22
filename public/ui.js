@@ -46,7 +46,7 @@
       label: "Admin",
       items: [
         { href: "/admin.html", label: "Admin Review", icon: "settings", match: ["/admin.html"], permissions: ["document_admin", "part_admin"] },
-        { href: "/deleted-items.html", label: "Deleted Items", icon: "archive", match: ["/deleted-items.html"], permissions: ["document_admin", "part_admin"] },
+        { href: "/deleted-items.html", label: "Deleted Items", icon: "archive", match: ["/deleted-items.html", "/released-part-codes.html"], permissions: ["document_admin", "part_admin"] },
         { href: "/users.html", label: "Users", icon: "users", match: ["/users.html"], permissions: ["user_admin"] }
       ]
     }
