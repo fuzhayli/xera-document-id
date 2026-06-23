@@ -118,11 +118,11 @@ function renderDeletedItems() {
   updateViewTabs();
   renderTableHead();
   const filtered = getFilteredItems();
-  elements.deletedTableTitle.textContent = state.view === "released" ? "Released Records" : "Deleted Records";
+  elements.deletedTableTitle.textContent = state.view === "released" ? "Re-requestable Codes & IDs" : "Deleted Records";
   elements.deletedCount.textContent = `${filtered.length} of ${state.items.length} records`;
 
   if (filtered.length === 0) {
-    const emptyLabel = state.view === "released" ? "No released records" : "No deleted records";
+    const emptyLabel = state.view === "released" ? "No re-requestable codes or IDs" : "No deleted records";
     elements.deletedBody.innerHTML = `<tr><td colspan="${state.view === "released" ? 8 : 6}" class="empty-cell">${emptyLabel}</td></tr>`;
     return;
   }
@@ -154,7 +154,7 @@ function updateViewTabs() {
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
   elements.deletedState.textContent = state.view === "released"
-    ? "Released items are available for new numbers."
+    ? "Deleted document IDs and part codes marked as re-requestable."
     : "Deleted records are retained here as JSON-backed snapshots.";
 }
 
@@ -167,8 +167,8 @@ function renderTableHead() {
     <th>Deleted By</th>
     <th>Deleted At</th>
     ${state.view === "released" ? `
-      <th>Released By</th>
-      <th>Released At</th>
+      <th>Marked By</th>
+      <th>Marked At</th>
     ` : ""}
   `;
 }
@@ -253,17 +253,17 @@ async function releaseSelectedItemForReuse() {
 
   const label = item.display_key || `${formatType(item.entity_type)} #${item.entity_id}`;
   const noun = item.entity_type === "document" ? "document number" : "part code";
-  const confirmed = window.confirm(`${label} will stay deleted, but its ${noun} will become available for new requests. Continue?`);
+  const confirmed = window.confirm(`${label} will stay deleted, but its ${noun} will become re-requestable. Continue?`);
   if (!confirmed) return;
 
   elements.releaseItemForReuseBtn.disabled = true;
   elements.republishDeletedItemBtn.disabled = true;
   showMessage("", "hidden");
-  elements.deletedState.textContent = "Releasing item";
+  elements.deletedState.textContent = "Marking as re-requestable";
 
   try {
     await apiPost(`/api/admin/deleted-items/${item.id}/release-for-reuse`, {});
-    showMessage(`${label} released for reuse.`, "success");
+    showMessage(`${label} marked as re-requestable.`, "success");
     closeDeletedActionModal();
     await loadDeletedItems();
   } catch (error) {
@@ -282,9 +282,9 @@ function buildDeletedActionDetails(item, record) {
     ["Details", getRecordDetails(item, record)],
     ["Deleted By", item.deleted_by || "-"],
     ["Deleted At", formatDateTime(item.deleted_at)],
-    ["Reuse Status", item.released_for_reuse_at
-      ? `Released by ${item.released_for_reuse_by || "-"} at ${formatDateTime(item.released_for_reuse_at)}`
-      : `Locked until released by ${formatType(item.entity_type)} List Admin`]
+    ["Re-request Status", item.released_for_reuse_at
+      ? `Marked as re-requestable by ${item.released_for_reuse_by || "-"} at ${formatDateTime(item.released_for_reuse_at)}`
+      : `Locked until marked as re-requestable by ${formatType(item.entity_type)} List Admin`]
   ];
 
   return rows.map(([label, value]) => `

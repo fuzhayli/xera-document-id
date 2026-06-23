@@ -2906,7 +2906,7 @@ async function getPendingPartRevisionNumberConflict(partNumber, ignoreRequestId 
 
 function formatPartNumberConflictMessage(partNumber, conflict) {
   if (conflict && conflict.type === "deleted_record") {
-    return `${partNumber} was previously used and deleted, so this part code cannot be reused until a Part List Admin releases it from Deleted Items.`;
+    return `${partNumber} was previously used and deleted, so this part code cannot be reused until a Part List Admin marks it as re-requestable in Deleted Items.`;
   }
   if (conflict && conflict.type === "pending_request") {
     return `${partNumber} is already reserved by a pending part request.`;
@@ -2921,7 +2921,7 @@ function formatPartSequenceConflictMessage(projectCode, mainCode, sequenceNo, co
   const sequenceLabel = `${projectCode}-${mainCode}${sequenceNo}`;
   if (conflict && conflict.type === "deleted_record") {
     const partNumber = conflict.part_number ? ` (${conflict.part_number})` : "";
-    return `${sequenceLabel}${partNumber} was previously used and deleted, so this part code cannot be reused until a Part List Admin releases it from Deleted Items.`;
+    return `${sequenceLabel}${partNumber} was previously used and deleted, so this part code cannot be reused until a Part List Admin marks it as re-requestable in Deleted Items.`;
   }
   if (conflict && conflict.type === "pending_request") {
     return `${sequenceLabel} sequence is already reserved by a pending part request.`;
@@ -4441,7 +4441,7 @@ async function isDocumentNoApprovedElsewhere(documentNo) {
 
 function formatDocumentNoConflictMessage(documentNo, conflict) {
   if (conflict && conflict.type === "deleted_record") {
-    return `${documentNo} was previously used and deleted, so this document number cannot be reused until a Document List Admin releases it from Deleted Items.`;
+    return `${documentNo} was previously used and deleted, so this document number cannot be reused until a Document List Admin marks it as re-requestable in Deleted Items.`;
   }
   if (conflict && conflict.type === "pending_request") {
     return `${documentNo} is already reserved by a pending document request.`;
@@ -4735,7 +4735,7 @@ async function republishDeletedItem(deletedItemId, user) {
     throw httpError(409, "already_republished", "This deleted item has already been republished.");
   }
   if (deletedItem.released_for_reuse_at) {
-    throw httpError(409, "code_released_for_reuse", "This deleted item was released for reuse and cannot be republished.");
+    throw httpError(409, "code_released_for_reuse", "This deleted item is marked as re-requestable and cannot be republished.");
   }
 
   const now = nowIso();
@@ -4747,7 +4747,7 @@ async function republishDeletedItem(deletedItemId, user) {
       throw httpError(409, "already_republished", "This deleted item has already been republished.");
     }
     if (currentItem.released_for_reuse_at) {
-      throw httpError(409, "code_released_for_reuse", "This deleted item was released for reuse and cannot be republished.");
+      throw httpError(409, "code_released_for_reuse", "This deleted item is marked as re-requestable and cannot be republished.");
     }
 
     const record = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);
@@ -4786,14 +4786,14 @@ async function releaseDeletedItemForReuse(deletedItemId, user) {
   const deletedItem = await getDeletedItemById(deletedItemId);
   if (!deletedItem) throw httpError(404, "not_found", "Deleted item not found.");
   if (!["document", "part"].includes(deletedItem.entity_type)) {
-    throw httpError(422, "invalid_deleted_item_type", "Only deleted documents and parts can be released for reuse.");
+    throw httpError(422, "invalid_deleted_item_type", "Only deleted documents and parts can be marked as re-requestable.");
   }
   requireDeletedItemPermission(user, deletedItem.entity_type);
   if (deletedItem.republished_at) {
     throw httpError(409, "already_republished", "This deleted item has already been republished.");
   }
   if (deletedItem.released_for_reuse_at) {
-    throw httpError(409, "already_released_for_reuse", "This deleted item has already been released for reuse.");
+    throw httpError(409, "already_released_for_reuse", "This deleted item is already marked as re-requestable.");
   }
 
   const now = nowIso();
@@ -4801,14 +4801,14 @@ async function releaseDeletedItemForReuse(deletedItemId, user) {
     const currentItem = await getDeletedItemById(deletedItemId);
     if (!currentItem) throw httpError(404, "not_found", "Deleted item not found.");
     if (!["document", "part"].includes(currentItem.entity_type)) {
-      throw httpError(422, "invalid_deleted_item_type", "Only deleted documents and parts can be released for reuse.");
+      throw httpError(422, "invalid_deleted_item_type", "Only deleted documents and parts can be marked as re-requestable.");
     }
     requireDeletedItemPermission(user, currentItem.entity_type);
     if (currentItem.republished_at) {
       throw httpError(409, "already_republished", "This deleted item has already been republished.");
     }
     if (currentItem.released_for_reuse_at) {
-      throw httpError(409, "already_released_for_reuse", "This deleted item has already been released for reuse.");
+      throw httpError(409, "already_released_for_reuse", "This deleted item is already marked as re-requestable.");
     }
 
     const record = await getDeletedEntityRecord(currentItem.entity_type, currentItem.entity_id);

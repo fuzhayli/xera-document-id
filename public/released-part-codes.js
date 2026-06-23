@@ -64,10 +64,10 @@ async function loadReleasedPartCodes() {
 
 function renderReleasedPartCodes() {
   const filtered = getFilteredItems();
-  elements.releasedCount.textContent = `${filtered.length} of ${state.items.length} codes`;
+  elements.releasedCount.textContent = `${filtered.length} of ${state.items.length} items`;
 
   if (filtered.length === 0) {
-    elements.releasedBody.innerHTML = '<tr><td colspan="7" class="empty-cell">No released part codes</td></tr>';
+    elements.releasedBody.innerHTML = '<tr><td colspan="7" class="empty-cell">No re-requestable codes or IDs</td></tr>';
     return;
   }
 

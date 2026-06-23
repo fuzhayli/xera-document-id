@@ -9,18 +9,18 @@
   </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>XERA Released Part Codes</title>
+  <title>XERA Re-requestable Codes &amp; IDs</title>
   <script src="/protected-boot.js"></script>
   <script>window.location.replace("/deleted-items.html?view=released");</script>
-  <link rel="stylesheet" href="/styles.css?v=deleted-items-reuse-20260622">
+  <link rel="stylesheet" href="/styles.css?v=deleted-items-re-requestable-20260623">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark"><img src="/logo.png" alt="XERA"></div>
       <div>
-        <h1>Released Part Codes</h1>
-        <p>Deleted part codes that are available for new requests</p>
+        <h1>Re-requestable Codes &amp; IDs</h1>
+        <p>Deleted document IDs and part codes that can be requested again</p>
       </div>
     </div>
     <div class="user-strip">
@@ -37,7 +37,7 @@
       <div class="panel-head">
         <div>
           <h2>Filters</h2>
-          <p id="releasedState">Released codes remain deleted, but their part numbers can be requested again.</p>
+          <p id="releasedState">Re-requestable codes and IDs remain deleted, but can be requested again.</p>
         </div>
         <div class="form-actions">
           <a class="secondary-btn" href="/deleted-items.html?type=part">Deleted Items</a>
@@ -49,16 +49,16 @@
         <div class="field search-field">
           <span>Search</span>
           <div class="search-field-control">
-            <input id="searchInput" autocomplete="off" placeholder="Part code, name, released by">
+            <input id="searchInput" autocomplete="off" placeholder="Code, ID, name, marked by">
             <details class="search-scope" id="releasedSearchScope" data-search-scope>
               <summary><span data-search-scope-label>All fields</span></summary>
-              <div class="search-scope-menu" aria-label="Search released code fields">
-                <label class="search-scope-option"><input type="checkbox" value="part_code" data-search-scope-option data-label="Part Code">Part Code</label>
+              <div class="search-scope-menu" aria-label="Search re-requestable code and ID fields">
+                <label class="search-scope-option"><input type="checkbox" value="part_code" data-search-scope-option data-label="Code / ID">Code / ID</label>
                 <label class="search-scope-option"><input type="checkbox" value="name" data-search-scope-option data-label="Name">Name</label>
                 <label class="search-scope-option"><input type="checkbox" value="details" data-search-scope-option data-label="Details">Details</label>
                 <label class="search-scope-option"><input type="checkbox" value="deleted_by" data-search-scope-option data-label="Deleted By">Deleted By</label>
-                <label class="search-scope-option"><input type="checkbox" value="released_by" data-search-scope-option data-label="Released By">Released By</label>
-                <label class="search-scope-option"><input type="checkbox" value="released_at" data-search-scope-option data-label="Released At">Released At</label>
+                <label class="search-scope-option"><input type="checkbox" value="released_by" data-search-scope-option data-label="Marked By">Marked By</label>
+                <label class="search-scope-option"><input type="checkbox" value="released_at" data-search-scope-option data-label="Marked At">Marked At</label>
               </div>
             </details>
           </div>
@@ -73,8 +73,8 @@
     <section class="panel table-panel">
       <div class="panel-head">
         <div>
-          <h2>Reusable Deleted Part Codes</h2>
-          <p id="releasedCount">0 codes</p>
+          <h2>Re-requestable Codes &amp; IDs</h2>
+          <p id="releasedCount">0 items</p>
         </div>
       </div>
 
@@ -87,12 +87,12 @@
               <th>Details</th>
               <th>Deleted By</th>
               <th>Deleted At</th>
-              <th>Released By</th>
-              <th>Released At</th>
+              <th>Marked By</th>
+              <th>Marked At</th>
             </tr>
           </thead>
           <tbody id="releasedBody">
-            <tr><td colspan="7" class="empty-cell">No released part codes</td></tr>
+            <tr><td colspan="7" class="empty-cell">No re-requestable codes or IDs</td></tr>
           </tbody>
         </table>
       </div>
@@ -101,6 +101,6 @@
 
   <script src="/auth.js"></script>
   <script src="/ui.js"></script>
-  <script src="/released-part-codes.js?v=deleted-items-reuse-20260622"></script>
+  <script src="/released-part-codes.js?v=deleted-items-re-requestable-20260623"></script>
 </body>
 </html>
