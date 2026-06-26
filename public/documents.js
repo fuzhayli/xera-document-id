@@ -387,16 +387,17 @@ function collectDocumentEditBody(documentRecord) {
 
 function formatDocumentEditSummary(before, result, body) {
   if (result.status === "pending_review") {
+    const proposed = result.proposed_document || body;
     return `Edit request sent for ${before.document_no}.\n\n${formatChangedFields([
-      ["Document No", before.document_no, body.document_no],
-      ["Category", before.category, body.category],
-      ["Year", before.year_yy, body.year_yy],
-      ["Revision", before.revision, body.revision],
-      ["Filename", before.generated_filename, body.generated_filename],
-      ["Document Name", before.document_name, body.document_name],
-      ["Reference", before.reference_value, body.reference_value],
-      ["Written By", before.written_by, body.written_by],
-      ["Creation Date", before.creation_date, body.creation_date]
+      ["Document No", before.document_no, proposed.document_no],
+      ["Category", before.category, proposed.category],
+      ["Year", before.year_yy, proposed.year_yy],
+      ["Revision", before.revision, proposed.revision],
+      ["Filename", before.generated_filename, proposed.generated_filename],
+      ["Document Name", before.document_name, proposed.document_name],
+      ["Reference", before.reference_value, proposed.reference_value],
+      ["Written By", before.written_by, proposed.written_by],
+      ["Creation Date", before.creation_date, proposed.creation_date]
     ])}`;
   }
 

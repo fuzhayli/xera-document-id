@@ -137,6 +137,23 @@ async function verifyDocumentEditRollback(db, port, headers) {
       'model', 'MODEL-A', 'Original Document', 'Test User', '2026-06-22',
       'controlled', 'XD-26-999_MODEL-A_Original Document_r00', ?, ?)
   `).run(Number(request.lastInsertRowid), admin.id, "2026-06-22T00:00:00.000Z");
+
+  const filenameSyncResponse = await fetch(`http://127.0.0.1:${port}/api/admin/documents/${record.lastInsertRowid}/edit`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      revision: "r01",
+      generated_filename: "XD-26-999_MODEL-A_Original Document_r00"
+    })
+  });
+  assert.equal(filenameSyncResponse.status, 200);
+  const filenameSync = await filenameSyncResponse.json();
+  assert.equal(filenameSync.document.revision, "r01");
+  assert.equal(filenameSync.document.generated_filename, "XD-26-999_MODEL-A_Original Document_r01");
+  const syncedRecord = await db.prepare("SELECT revision, generated_filename FROM document_records WHERE id = ?").get(Number(record.lastInsertRowid));
+  assert.equal(syncedRecord.revision, "r01");
+  assert.equal(syncedRecord.generated_filename, "XD-26-999_MODEL-A_Original Document_r01");
+
   await db.exec("CREATE TRIGGER fail_document_request_update BEFORE UPDATE ON document_requests BEGIN SELECT RAISE(ABORT, 'forced document request update failure'); END");
 
   const response = await fetch(`http://127.0.0.1:${port}/api/admin/documents/${record.lastInsertRowid}/edit`, {

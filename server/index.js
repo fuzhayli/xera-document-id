@@ -3568,7 +3568,7 @@ async function editDocumentRecordByRequesterInTransaction(documentId, user, body
     ignoreRequestId: request.id
   });
   await notifyAdminsOfDocumentEditRequest(before, proposed, user, request);
-  return { status: "pending_review", document: before };
+  return { status: "pending_review", document: before, proposed_document: proposed };
 }
 
 async function updateDocumentRecordDetails(documentId, user, body = {}, options = {}) {
@@ -3763,9 +3763,12 @@ function normalizeDocumentRecordEditInput(before, body = {}, payload = {}) {
     if (parsed.valid) next.sequence_no = parsed.sequence_no || next.sequence_no || "000";
   }
 
-  next.generated_filename = hasOwn(body, "generated_filename") || hasOwn(body, "generatedFilename")
+  const submittedGeneratedFilename = hasOwn(body, "generated_filename") || hasOwn(body, "generatedFilename")
     ? sanitizeFilenameText(body.generated_filename ?? body.generatedFilename)
-    : (rule ? buildFilename(rule, next.document_no, next) : sanitizeFilenameText(before.generated_filename));
+    : "";
+  next.generated_filename = rule && rule.implemented
+    ? buildFilename(rule, next.document_no, next)
+    : (submittedGeneratedFilename || sanitizeFilenameText(before.generated_filename));
 
   return next;
 }
