@@ -68,6 +68,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     assert.equal(exportResponse.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     verificationDb = createDatabase({ url: `file:${databasePath}` });
+    await verifyMrIncomingInspectionRequest(verificationDb, port, headers);
     await verifyPartEditRollback(verificationDb, port, headers);
     await verifyDocumentEditRollback(verificationDb, port, headers);
   } finally {
@@ -82,6 +83,42 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     }
   }
 });
+
+async function verifyMrIncomingInspectionRequest(db, port, headers) {
+  const body = {
+    category: "MR",
+    reference_type: "incominginspection",
+    reference_value: "1501-1107",
+    document_name: "",
+    revision: "r00"
+  };
+  const previewResponse = await fetch(`http://127.0.0.1:${port}/api/preview`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.valid, true);
+  assert.match(preview.generated_filename_preview, /^XMR-\d{2}-001_1501-1107_\d{8}$/);
+
+  const requestResponse = await fetch(`http://127.0.0.1:${port}/api/requests`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  assert.equal(requestResponse.status, 201);
+  const { request } = await requestResponse.json();
+  assert.equal(request.status, "approved");
+  assert.equal(request.reference_type, "incominginspection");
+  assert.equal(request.document_name, "");
+  assert.match(request.generated_filename, /^XMR-\d{2}-001_1501-1107_\d{8}$/);
+
+  const record = await db.prepare("SELECT reference_type, document_name, generated_filename FROM document_records WHERE request_id = ?").get(Number(request.id));
+  assert.equal(record.reference_type, "incominginspection");
+  assert.equal(record.document_name, "");
+  assert.equal(record.generated_filename, request.generated_filename);
+}
 
 async function verifyPartEditRollback(db, port, headers) {
   const admin = await db.prepare("SELECT id FROM users WHERE email = ?").get("admin@xera.com.tr");

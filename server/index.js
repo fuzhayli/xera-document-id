@@ -20,6 +20,7 @@ const PORT = Number(process.env.PORT || 32780);
 const NODE_ENV = process.env.NODE_ENV || "development";
 const ALLOW_PUBLIC_SIGNUP = !parseBooleanEnv(process.env.DISABLE_PUBLIC_SIGNUP, false);
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Istanbul";
+const MR_INCOMING_INSPECTION_REFERENCE_TYPES = new Set(["incominginspection", "incoming-inspection", "incoming"]);
 
 // Document format rules are intentionally centralized here; every preview,
 // approval, filename export and revision update path reads from this object.
@@ -3253,7 +3254,7 @@ function validateInput(input) {
   if (input.company_code !== "X") errors.push("Company code must be X for the current MVP.");
   if (!/^\d{2}$/.test(input.year_yy)) errors.push("Year must use YY format, for example 26.");
   if (!isValidUiDate(input.creation_date)) errors.push("Creation date must be a valid YYYY-MM-DD date.");
-  if (!input.document_name) errors.push("Document name is required.");
+  if (isDocumentNameRequired(input) && !input.document_name) errors.push("Document name is required.");
   if (!input.written_by) errors.push("Written by is required.");
   if (rule && ["D", "R", "MD", "MR", "EC", "QMS", "SOP", "MARKETING"].includes(rule.code) && !input.reference_value) {
     errors.push("Reference value is required.");
@@ -4252,6 +4253,9 @@ function buildFilename(rule, documentNo, input) {
   if (rule.code === "SOP" && isIncomingSop(input)) {
     return [documentNo, suffix].filter(Boolean).join("_");
   }
+  if (rule.code === "MR" && isMrIncomingInspection(input)) {
+    return [documentNo, input.reference_value, suffix].filter(Boolean).join("_");
+  }
   if (["QMS", "SOP"].includes(rule.code)) {
     return [documentNo, input.document_name, suffix].filter(Boolean).join("_");
   }
@@ -4507,6 +4511,15 @@ function isSequencedEcType(input) {
 
 function isIncomingSop(input) {
   return String(input.detail_type || "").toUpperCase() === "INCOMING";
+}
+
+function isMrIncomingInspection(input) {
+  return String(input.category || "").toUpperCase() === "MR"
+    && MR_INCOMING_INSPECTION_REFERENCE_TYPES.has(String(input.reference_type || "").toLowerCase());
+}
+
+function isDocumentNameRequired(input) {
+  return !isMrIncomingInspection(input);
 }
 
 function isIncomingSopPartCode(value) {

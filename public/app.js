@@ -22,6 +22,19 @@ const EXCEL_REFERENCE_OPTIONS = {
   TEMPLATE: ["05", "18"]
 };
 
+const MR_INCOMING_INSPECTION_REFERENCE_TYPE = "incominginspection";
+const DEFAULT_REFERENCE_TYPE_OPTIONS = [
+  ["model", "Model"],
+  ["part", "Part Code"],
+  ["department", "Department"],
+  ["task", "Task"],
+  ["brand", "Brand"],
+  ["process", "Process No."]
+];
+const MR_REFERENCE_TYPE_OPTIONS = DEFAULT_REFERENCE_TYPE_OPTIONS.map(([value, label]) =>
+  value === "part" ? [MR_INCOMING_INSPECTION_REFERENCE_TYPE, "Incoming Inspection"] : [value, label]
+);
+
 const state = {
   categories: [],
   myRequests: [],
@@ -91,6 +104,7 @@ const elements = {
   extraVersion: document.getElementById("extraVersion"),
   languageField: document.getElementById("languageField"),
   language: document.getElementById("language"),
+  documentNameField: document.getElementById("documentNameField"),
   documentName: document.getElementById("documentName"),
   writtenBy: document.getElementById("writtenBy"),
   creationDate: document.getElementById("creationDate"),
@@ -116,6 +130,7 @@ const elements = {
 const referenceLabels = {
   model: "Model Name / ID",
   part: "Part Code",
+  [MR_INCOMING_INSPECTION_REFERENCE_TYPE]: "Part Code",
   department: "Department",
   task: "Task",
   brand: "Brand",
@@ -295,6 +310,7 @@ function bindEvents() {
       applySopIncomingDocumentName({ force: true });
     }
     updateReferenceLabel();
+    syncDocumentNameVisibility();
     updatePreview();
   });
   elements.form.addEventListener("submit", submitRequest);
@@ -457,8 +473,10 @@ function applyCategoryDefaults() {
   if (!category) {
     elements.categorySummary.textContent = "Document Type";
     hideExtraFields();
+    setReferenceTypeOptions(DEFAULT_REFERENCE_TYPE_OPTIONS);
     setReferenceOptions([]);
     setReferenceTypeLocked(false);
+    syncDocumentNameVisibility();
     updateReferenceLabel();
     return;
   }
@@ -467,6 +485,7 @@ function applyCategoryDefaults() {
   elements.categorySummary.textContent = CATEGORY_LABELS[category.code] || `${category.code} document`;
   hideExtraFields();
 
+  setReferenceTypeOptions(getReferenceTypeOptionsForCategory(category.code));
   if (formRule.referenceType) elements.referenceType.value = formRule.referenceType;
   elements.referenceValue.placeholder = formRule.referencePlaceholder || "Reference";
   setReferenceOptions(formRule.referenceOptions || []);
@@ -485,6 +504,7 @@ function applyCategoryDefaults() {
 
   updateReferenceLabel();
   applyTemplateDependentFields();
+  syncDocumentNameVisibility();
 }
 
 function applyExtraFieldRules(formRule) {
@@ -561,6 +581,16 @@ function setReferenceOptions(options) {
   elements.referenceOptions.innerHTML = options
     .map(option => `<option value="${escapeHtml(option)}"></option>`)
     .join("");
+}
+
+function setReferenceTypeOptions(options) {
+  elements.referenceType.innerHTML = options
+    .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+    .join("");
+}
+
+function getReferenceTypeOptionsForCategory(categoryCode) {
+  return categoryCode === "MR" ? MR_REFERENCE_TYPE_OPTIONS : DEFAULT_REFERENCE_TYPE_OPTIONS;
 }
 
 function setReferenceTypeLocked(isLocked) {
@@ -717,6 +747,14 @@ function applyTemplateDependentFields() {
     }
     if (incoming) applySopIncomingDocumentName();
   }
+
+  if (category.code === "MR") {
+    const incomingInspection = isMrIncomingInspectionSelected();
+    const formRule = CATEGORY_FORM_RULES.MR;
+    elements.referenceValue.placeholder = incomingInspection ? "1501-1107" : formRule.referencePlaceholder;
+    setReferenceOptions(incomingInspection ? EXCEL_REFERENCE_OPTIONS.SOP_INCOMING : formRule.referenceOptions);
+    if (incomingInspection) elements.documentName.value = "";
+  }
 }
 
 function applySopIncomingDocumentName(options = {}) {
@@ -745,6 +783,17 @@ function applySopIncomingDocumentName(options = {}) {
 function updateReferenceLabel() {
   const type = elements.referenceType.value;
   elements.referenceLabel.textContent = referenceLabels[type] || "Reference";
+}
+
+function syncDocumentNameVisibility() {
+  const skipDocumentName = state.selectedCategory === "MR" && isMrIncomingInspectionSelected();
+  elements.documentNameField?.classList.toggle("hidden", skipDocumentName);
+  elements.documentName.disabled = skipDocumentName;
+  if (skipDocumentName) elements.documentName.value = "";
+}
+
+function isMrIncomingInspectionSelected() {
+  return elements.referenceType.value === MR_INCOMING_INSPECTION_REFERENCE_TYPE;
 }
 
 function collectFormData() {
@@ -1300,7 +1349,16 @@ function escapeHtml(value) {
     if (!elements.documentNameModeFields || !elements.documentNameField || !elements.documentName) return;
 
     const isRecordRequest = state.selectedCategory === "R";
+    const skipDocumentName = state.selectedCategory === "MR" && isMrIncomingInspectionSelected();
     elements.documentNameModeFields.classList.toggle("hidden", !isRecordRequest);
+
+    if (skipDocumentName) {
+      elements.templateNameField?.classList.add("hidden");
+      elements.documentNameField.classList.add("hidden");
+      elements.documentName.disabled = true;
+      elements.documentName.value = "";
+      return;
+    }
 
     if (!isRecordRequest) {
       elements.templateNameField?.classList.add("hidden");
