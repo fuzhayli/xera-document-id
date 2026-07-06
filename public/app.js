@@ -306,10 +306,14 @@ function bindEvents() {
       normalizeEcOrderInput();
       applyEcOrderDocumentName({ force: true });
     }
+    if (state.selectedCategory === "EC" && event.target === elements.extraType) {
+      applyEcOrderDocumentName({ force: true });
+    }
     if (state.selectedCategory === "SOP" && event.target === elements.extraType) {
       applySopIncomingDocumentName({ force: true });
     }
     updateReferenceLabel();
+    syncReferenceVisibility();
     syncDocumentNameVisibility();
     updatePreview();
   });
@@ -476,6 +480,7 @@ function applyCategoryDefaults() {
     setReferenceTypeOptions(DEFAULT_REFERENCE_TYPE_OPTIONS);
     setReferenceOptions([]);
     setReferenceTypeLocked(false);
+    syncReferenceVisibility();
     syncDocumentNameVisibility();
     updateReferenceLabel();
     return;
@@ -504,6 +509,7 @@ function applyCategoryDefaults() {
 
   updateReferenceLabel();
   applyTemplateDependentFields();
+  syncReferenceVisibility();
   syncDocumentNameVisibility();
 }
 
@@ -619,6 +625,7 @@ function buildEcOrderDocumentNames(documents, requests) {
     if (documentRecord.category !== "EC") continue;
     const meta = parseEcDocumentNo(documentRecord.document_no);
     if (!meta || !documentRecord.document_name) continue;
+    if (meta.type !== "R" || meta.sequence_no) continue;
     entries.push({
       year_yy: documentRecord.year_yy || meta.year_yy,
       order: meta.order,
@@ -633,6 +640,7 @@ function buildEcOrderDocumentNames(documents, requests) {
     if (request.category !== "EC" || !["pending", "approved"].includes(request.status)) continue;
     const payload = parseJsonObject(request.payload_json);
     const meta = parseEcDocumentNo(request.document_no);
+    if (!meta || meta.type !== "R" || meta.sequence_no) continue;
     const order = normalizeEcOrderValue(payload.detail_code || request.detail_code || (meta && meta.order));
     const yearYy = request.year_yy || payload.year_yy || (meta && meta.year_yy);
     if (!order || !yearYy || !request.document_name) continue;
@@ -682,18 +690,22 @@ function applyEcOrderDocumentName(options = {}) {
   if (!order) return false;
 
   const match = findEcOrderDocumentName(order);
-  if (match && (options.force || state.autoFilledEcDocumentName || !elements.documentName.value.trim())) {
+  const forceBaseName = match && !isEcRTypeSelected();
+  if (match && (forceBaseName || options.force || state.autoFilledEcDocumentName || !elements.documentName.value.trim())) {
     elements.documentName.value = match.document_name;
     state.autoFilledEcDocumentName = true;
+    syncDocumentNameVisibility();
     return true;
   }
 
   if (!match && state.autoFilledEcDocumentName) {
     elements.documentName.value = "";
     state.autoFilledEcDocumentName = false;
+    syncDocumentNameVisibility();
     return true;
   }
 
+  syncDocumentNameVisibility();
   return false;
 }
 
@@ -785,15 +797,35 @@ function updateReferenceLabel() {
   elements.referenceLabel.textContent = referenceLabels[type] || "Reference";
 }
 
+function syncReferenceVisibility() {
+  const skipReference = state.selectedCategory === "EC";
+  elements.referenceType.closest(".field")?.classList.toggle("hidden", skipReference);
+  elements.referenceValue.closest(".field")?.classList.toggle("hidden", skipReference);
+  elements.referenceValue.disabled = skipReference;
+  if (skipReference) elements.referenceValue.value = "";
+}
+
 function syncDocumentNameVisibility() {
   const skipDocumentName = state.selectedCategory === "MR" && isMrIncomingInspectionSelected();
+  const lockEcDocumentName = isEcDocumentNameLocked();
   elements.documentNameField?.classList.toggle("hidden", skipDocumentName);
-  elements.documentName.disabled = skipDocumentName;
+  elements.documentName.disabled = skipDocumentName || lockEcDocumentName;
   if (skipDocumentName) elements.documentName.value = "";
 }
 
 function isMrIncomingInspectionSelected() {
   return elements.referenceType.value === MR_INCOMING_INSPECTION_REFERENCE_TYPE;
+}
+
+function isEcDocumentNameLocked() {
+  return state.selectedCategory === "EC"
+    && !isEcRTypeSelected()
+    && Boolean(findEcOrderDocumentName(normalizeEcOrderValue(elements.extraCode.value)));
+}
+
+function isEcRTypeSelected() {
+  return state.selectedCategory === "EC"
+    && String(elements.extraType.value || "R").toUpperCase() === "R";
 }
 
 function collectFormData() {
@@ -842,6 +874,7 @@ async function loadPreview() {
       if (!state.documentNoTouched || !elements.documentNo.value.trim()) {
         elements.documentNo.value = data.document_no_preview;
       }
+      applyPreviewDocumentName(data.input);
       elements.documentNoPreview.textContent = data.document_no_preview;
       elements.filenamePreview.textContent = data.generated_filename_preview;
       elements.previewState.textContent = "Valid";
@@ -854,6 +887,15 @@ async function loadPreview() {
     if (error.name === "AbortError") return;
     renderPreviewErrors([error.message]);
   }
+}
+
+function applyPreviewDocumentName(input) {
+  if (state.selectedCategory !== "EC" || isEcRTypeSelected()) return;
+  const documentName = String(input && input.document_name || "").trim();
+  if (!documentName) return;
+  elements.documentName.value = documentName;
+  state.autoFilledEcDocumentName = true;
+  syncDocumentNameVisibility();
 }
 
 function resetPreview() {
@@ -1350,6 +1392,7 @@ function escapeHtml(value) {
 
     const isRecordRequest = state.selectedCategory === "R";
     const skipDocumentName = state.selectedCategory === "MR" && isMrIncomingInspectionSelected();
+    const lockEcDocumentName = isEcDocumentNameLocked();
     elements.documentNameModeFields.classList.toggle("hidden", !isRecordRequest);
 
     if (skipDocumentName) {
@@ -1363,7 +1406,7 @@ function escapeHtml(value) {
     if (!isRecordRequest) {
       elements.templateNameField?.classList.add("hidden");
       elements.documentNameField.classList.remove("hidden");
-      elements.documentName.disabled = false;
+      elements.documentName.disabled = lockEcDocumentName;
       return;
     }
 

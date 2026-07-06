@@ -69,6 +69,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
 
     verificationDb = createDatabase({ url: `file:${databasePath}` });
     await verifyMrIncomingInspectionRequest(verificationDb, port, headers);
+    await verifyEcRDocumentNamePropagation(verificationDb, port, headers);
     await verifyPartEditRollback(verificationDb, port, headers);
     await verifyDocumentEditRollback(verificationDb, port, headers);
   } finally {
@@ -118,6 +119,68 @@ async function verifyMrIncomingInspectionRequest(db, port, headers) {
   assert.equal(record.reference_type, "incominginspection");
   assert.equal(record.document_name, "");
   assert.equal(record.generated_filename, request.generated_filename);
+}
+
+async function verifyEcRDocumentNamePropagation(db, port, headers) {
+  const baseDocumentName = "Critical EC Change";
+  const baseResponse = await fetch(`http://127.0.0.1:${port}/api/requests`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      category: "EC",
+      detail_type: "R",
+      detail_code: "Z",
+      reference_type: "model",
+      reference_value: "MODEL-SHOULD-SKIP",
+      document_name: baseDocumentName,
+      revision: "r00"
+    })
+  });
+  assert.equal(baseResponse.status, 201);
+  const { request: baseRequest } = await baseResponse.json();
+  assert.equal(baseRequest.reference_value, "");
+  assert.match(baseRequest.generated_filename, /^XEC-\d{2}Z-R_Critical EC Change_r00$/);
+  assert.equal(baseRequest.generated_filename.includes("MODEL-SHOULD-SKIP"), false);
+
+  const previewResponse = await fetch(`http://127.0.0.1:${port}/api/preview`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      category: "EC",
+      detail_type: "E",
+      detail_code: "Z",
+      document_name: "",
+      revision: "r00"
+    })
+  });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.input.document_name, baseDocumentName);
+  assert.match(preview.generated_filename_preview, /^XEC-\d{2}Z-E_Critical EC Change_r00$/);
+
+  const relatedResponse = await fetch(`http://127.0.0.1:${port}/api/requests`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      category: "EC",
+      detail_type: "RR",
+      detail_code: "Z",
+      reference_type: "model",
+      reference_value: "ANOTHER-MODEL-SHOULD-SKIP",
+      document_name: "Wrong Name",
+      revision: "r00"
+    })
+  });
+  assert.equal(relatedResponse.status, 201);
+  const { request: relatedRequest } = await relatedResponse.json();
+  assert.equal(relatedRequest.document_name, baseDocumentName);
+  assert.equal(relatedRequest.reference_value, "");
+  assert.match(relatedRequest.generated_filename, /^XEC-\d{2}Z-Rr-001_Critical EC Change_r00$/);
+  assert.equal(relatedRequest.generated_filename.includes("ANOTHER-MODEL-SHOULD-SKIP"), false);
+
+  const record = await db.prepare("SELECT document_name, generated_filename FROM document_records WHERE request_id = ?").get(Number(relatedRequest.id));
+  assert.equal(record.document_name, baseDocumentName);
+  assert.equal(record.generated_filename, relatedRequest.generated_filename);
 }
 
 async function verifyPartEditRollback(db, port, headers) {

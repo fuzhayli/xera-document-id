@@ -3169,14 +3169,20 @@ function normalizeRequestInput(body, user = null, options = {}) {
   const yearYy = options.forceTodayCreationDate
     ? creationDate.slice(2, 4)
     : String(body.year_yy || body.yearYY || creationDate.slice(2, 4)).padStart(2, "0");
+  const referenceType = category === "EC"
+    ? ""
+    : sanitizeCompact(body.reference_type || body.referenceType || "model").toLowerCase();
+  const referenceValue = category === "EC"
+    ? ""
+    : sanitizeText(body.reference_value || body.referenceValue || body.product_or_task || "");
   return {
     category,
     company_code: sanitizeCompact(body.company_code || body.companyCode || "X"),
     year_yy: yearYy,
     revision,
     document_no: sanitizeText(body.document_no || body.documentNo || ""),
-    reference_type: sanitizeCompact(body.reference_type || body.referenceType || "model").toLowerCase(),
-    reference_value: sanitizeText(body.reference_value || body.referenceValue || body.product_or_task || ""),
+    reference_type: referenceType,
+    reference_value: referenceValue,
     document_name: sanitizeText(body.document_name || body.documentName || ""),
     written_by: user ? user.display_name : sanitizeText(body.written_by || body.writtenBy || ""),
     creation_date: creationDate,
@@ -3191,6 +3197,7 @@ function normalizeRequestInput(body, user = null, options = {}) {
 async function buildPreview(input, options = {}) {
   // Preview is authoritative for numbering: request creation and admin approval
   // both call this before a document number becomes official.
+  await applyEcRDocumentName(input);
   const errors = validateInput(input);
   const rule = CATEGORY_RULES[input.category];
   if (errors.length > 0) {
@@ -3256,7 +3263,7 @@ function validateInput(input) {
   if (!isValidUiDate(input.creation_date)) errors.push("Creation date must be a valid YYYY-MM-DD date.");
   if (isDocumentNameRequired(input) && !input.document_name) errors.push("Document name is required.");
   if (!input.written_by) errors.push("Written by is required.");
-  if (rule && ["D", "R", "MD", "MR", "EC", "QMS", "SOP", "MARKETING"].includes(rule.code) && !input.reference_value) {
+  if (rule && ["D", "R", "MD", "MR", "QMS", "SOP", "MARKETING"].includes(rule.code) && !input.reference_value) {
     errors.push("Reference value is required.");
   }
   if (rule && REVISION_CATEGORY_CODES.includes(rule.code) && !/^r\d{2}$/.test(input.revision)) {
@@ -3758,6 +3765,11 @@ function normalizeDocumentRecordEditInput(before, body = {}, payload = {}) {
     language: optionalCompactValue(body.language, payload.language || "EN")
   };
 
+  if (next.category === "EC") {
+    next.reference_type = "";
+    next.reference_value = "";
+  }
+
   const rule = CATEGORY_RULES[next.category];
   if (rule) {
     const parsed = parseDocumentNo(rule, next, next.document_no);
@@ -3775,8 +3787,12 @@ function normalizeDocumentRecordEditInput(before, body = {}, payload = {}) {
 }
 
 async function validateDocumentRecordEditInput(input, options = {}) {
-  const errors = validateInput(input);
+  await applyEcRDocumentName(input);
   const rule = CATEGORY_RULES[input.category];
+  if (rule && rule.implemented && input.document_no) {
+    input.generated_filename = buildFilename(rule, input.document_no, input);
+  }
+  const errors = validateInput(input);
 
   if (!input.document_no) errors.push("Document no is required.");
   if (!input.generated_filename) errors.push("Generated filename is required.");
@@ -4256,6 +4272,9 @@ function buildFilename(rule, documentNo, input) {
   if (rule.code === "MR" && isMrIncomingInspection(input)) {
     return [documentNo, input.reference_value, suffix].filter(Boolean).join("_");
   }
+  if (rule.code === "EC") {
+    return [documentNo, input.document_name, suffix].filter(Boolean).join("_");
+  }
   if (["QMS", "SOP"].includes(rule.code)) {
     return [documentNo, input.document_name, suffix].filter(Boolean).join("_");
   }
@@ -4511,6 +4530,57 @@ function isSequencedEcType(input) {
 
 function isIncomingSop(input) {
   return String(input.detail_type || "").toUpperCase() === "INCOMING";
+}
+
+async function applyEcRDocumentName(input) {
+  if (!isEcDocumentInput(input) || isEcRDocument(input)) return;
+
+  const documentName = await findEcRDocumentName(input);
+  if (documentName) input.document_name = documentName;
+}
+
+async function findEcRDocumentName(input) {
+  const documentNo = buildEcRDocumentNo(input);
+  if (!documentNo) return "";
+
+  const record = await db.prepare(`
+    SELECT document_name
+    FROM document_records
+    WHERE category = 'EC'
+      AND document_no = ?
+      AND deleted_at IS NULL
+    ORDER BY approved_at DESC, id DESC
+    LIMIT 1
+  `).get(documentNo);
+  if (record && record.document_name) return record.document_name;
+
+  const request = await db.prepare(`
+    SELECT document_name
+    FROM document_requests
+    WHERE category = 'EC'
+      AND document_no = ?
+      AND status IN ('pending', 'approved')
+    ORDER BY CASE WHEN status = 'approved' THEN 0 ELSE 1 END,
+      created_at DESC,
+      id DESC
+    LIMIT 1
+  `).get(documentNo);
+  return request && request.document_name ? request.document_name : "";
+}
+
+function buildEcRDocumentNo(input) {
+  if (!isEcDocumentInput(input) || !/^\d{2}$/.test(input.year_yy || "")) return "";
+  const ecOrder = input.detail_code || "A";
+  if (!/^[A-Z]$/.test(ecOrder)) return "";
+  return `XEC-${input.year_yy}${ecOrder}-R`;
+}
+
+function isEcDocumentInput(input) {
+  return String(input.category || "").toUpperCase() === "EC";
+}
+
+function isEcRDocument(input) {
+  return isEcDocumentInput(input) && formatEcType(input.detail_type || "R") === "R";
 }
 
 function isMrIncomingInspection(input) {
