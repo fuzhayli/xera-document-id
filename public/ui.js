@@ -59,6 +59,8 @@
   document.addEventListener("click", closeNotificationCenterOnOutsideClick);
   document.addEventListener("keydown", handleNotificationCenterKeydown);
 
+  const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
+
   window.XeraSearchScopes = {
     getSelected(scopeId) {
       const picker = document.getElementById(scopeId);
@@ -73,6 +75,22 @@
       });
       updateSearchScopeLabel(picker);
     }
+  };
+
+  window.XeraUi = {
+    apiBase: API_BASE,
+    apiGet,
+    apiPost,
+    parseResponse,
+    showMessage,
+    hideMessage,
+    setApiStatus,
+    escapeHtml,
+    formatDateTime,
+    normalizeSearch,
+    getActiveSearchFields,
+    matchesScopedSearch,
+    flattenSearchValue
   };
 
   async function initChrome() {
@@ -436,6 +454,83 @@
   function handleNotificationCenterKeydown(event) {
     if (event.key !== "Escape") return;
     document.getElementById("notificationCenter")?.classList.add("hidden");
+  }
+
+  async function apiGet(path) {
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: Auth.authHeaders()
+    });
+    return parseResponse(response);
+  }
+
+  async function apiPost(path, body, signal) {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        ...Auth.authHeaders(),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body),
+      signal
+    });
+    return parseResponse(response);
+  }
+
+  async function parseResponse(response) {
+    const text = await response.text();
+    let data = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { message: text };
+      }
+    }
+    if (!response.ok) {
+      const message = data.message || (data.errors && data.errors.join(" ")) || "Request failed.";
+      throw new Error(message);
+    }
+    return data;
+  }
+
+  function showMessage(element, message, type) {
+    if (!element) return;
+    element.className = "message-box";
+    if (type === "hidden" || !message) {
+      element.classList.add("hidden");
+      element.textContent = "";
+      return;
+    }
+    element.classList.add(type);
+    element.textContent = message;
+    element.classList.remove("hidden");
+  }
+
+  function hideMessage(element) {
+    showMessage(element, "", "hidden");
+  }
+
+  function setApiStatus(element, isOnline) {
+    if (!element) return;
+    element.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
+  }
+
+  function normalizeSearch(value) {
+    return String(value || "").toLocaleLowerCase("tr-TR").trim();
+  }
+
+  function getActiveSearchFields(scopeId, searchFieldMap) {
+    const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
+    const validSelected = selected.filter(field => searchFieldMap[field]);
+    return validSelected.length ? validSelected : Object.keys(searchFieldMap);
+  }
+
+  function matchesScopedSearch(record, search, searchFields, searchFieldMap) {
+    return searchFields.some(field => normalizeSearch(flattenSearchValue(searchFieldMap[field](record))).includes(search));
+  }
+
+  function flattenSearchValue(value) {
+    return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
   }
 
   function formatDateTime(value) {

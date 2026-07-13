@@ -19,15 +19,26 @@
   const ADMIN_PERMISSIONS = ["part_admin", "document_admin", "user_admin"];
 
   function getToken() {
-    return localStorage.getItem(TOKEN_KEY) || "";
+    return readStorage(sessionStorage) || readStorage(localStorage);
   }
 
-  function setSession(token) {
-    localStorage.setItem(TOKEN_KEY, token);
+  function setSession(token, remember = false) {
+    clearSession();
+    const storage = remember ? localStorage : sessionStorage;
+    storage.setItem(TOKEN_KEY, token);
   }
 
   function clearSession() {
     localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
+
+  function readStorage(storage) {
+    try {
+      return storage.getItem(TOKEN_KEY) || "";
+    } catch {
+      return "";
+    }
   }
 
   function authHeaders(extra = {}) {

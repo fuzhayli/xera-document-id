@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <script>
     (function() {
@@ -32,14 +32,14 @@
           <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
         </label>
 
-        <div id="messageBox" class="message-box hidden"></div>
+        <div id="messageBox" class="message-box hidden" role="alert" aria-live="polite"></div>
 
         <div class="auth-row">
           <label class="remember-me">
-            <input type="checkbox" name="remember">
+            <input id="rememberSession" type="checkbox" name="remember">
             <span>Remember me</span>
           </label>
-          <a class="auth-minor-link" href="/login.html">Forgot password?</a>
+          <span class="auth-help-text">Ask an administrator to reset it</span>
         </div>
 
         <button class="primary-btn auth-submit" type="submit">Login</button>

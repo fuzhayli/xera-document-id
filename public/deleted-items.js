@@ -4,6 +4,15 @@ const state = {
   currentUser: null,
   view: "deleted"
 };
+const {
+  apiGet,
+  apiPost,
+  escapeHtml,
+  formatDateTime,
+  normalizeSearch,
+  getActiveSearchFields,
+  matchesScopedSearch
+} = window.XeraUi;
 const DELETED_SEARCH_SCOPE_ID = "deletedSearchScope";
 const DELETED_SEARCH_FIELDS = {
   type: item => formatType(item.entity_type),
@@ -41,6 +50,8 @@ const elements = {
   deletedActionMeta: document.getElementById("deletedActionMeta"),
   deletedActionDetails: document.getElementById("deletedActionDetails")
 };
+const showMessage = (message, type) => window.XeraUi.showMessage(elements.messageBox, message, type);
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -318,7 +329,7 @@ function getFilteredItems() {
     if (type && item.entity_type !== type) return false;
     if (!search) return true;
 
-    return matchesScopedSearch(item, search, searchFields);
+    return matchesScopedSearch(item, search, searchFields, DELETED_SEARCH_FIELDS);
   });
 }
 
@@ -340,86 +351,6 @@ function clearFilters() {
   window.XeraSearchScopes?.clear(DELETED_SEARCH_SCOPE_ID);
   renderDeletedItems();
 }
-
-function getActiveSearchFields(scopeId, searchFieldMap) {
-  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
-  const validSelected = selected.filter(field => searchFieldMap[field]);
-  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
-}
-
-function matchesScopedSearch(item, search, searchFields) {
-  return searchFields.some(field => normalizeSearch(flattenSearchValue(DELETED_SEARCH_FIELDS[field](item))).includes(search));
-}
-
-function flattenSearchValue(value) {
-  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
-}
-
-async function apiGet(path) {
-  const response = await fetch(path, {
-    headers: Auth.authHeaders()
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-async function apiPost(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      ...Auth.authHeaders(),
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-function showMessage(text, type) {
-  elements.messageBox.className = "message-box";
-  if (type === "hidden" || !text) {
-    elements.messageBox.classList.add("hidden");
-    elements.messageBox.textContent = "";
-    return;
-  }
-  elements.messageBox.classList.add(type);
-  elements.messageBox.textContent = text;
-  elements.messageBox.classList.remove("hidden");
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
-function normalizeSearch(value) {
-  return String(value || "").toLocaleLowerCase("tr-TR").trim();
-}
-
 function formatType(type) {
   return type === "document" ? "Document" : "Part";
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("tr-TR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

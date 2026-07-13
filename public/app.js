@@ -1,5 +1,11 @@
 let currentUser = null;
 const MVP_CATEGORIES = ["D", "R", "MD", "MR", "EC", "MARKETING", "QMS", "TEMPLATE", "SOP"];
+const {
+  apiGet,
+  apiPost,
+  escapeHtml,
+  formatDateTime
+} = window.XeraUi;
 
 const CATEGORY_LABELS = {
   D: "D (General Purpose Document)",
@@ -49,6 +55,9 @@ const state = {
   ecOrderDocumentNamesLoaded: false,
   autoFilledEcDocumentName: false,
   autoFilledSopDocumentName: false,
+  recordTemplateDocumentNames: [],
+  recordTemplateDocumentNamesLoaded: false,
+  autoFilledRecordTemplateDocumentName: false,
   activeView: "overview"
 };
 
@@ -104,6 +113,10 @@ const elements = {
   extraVersion: document.getElementById("extraVersion"),
   languageField: document.getElementById("languageField"),
   language: document.getElementById("language"),
+  documentNameModeFields: document.getElementById("documentNameModeFields"),
+  documentNameSource: document.getElementById("documentNameSource"),
+  templateNameField: document.getElementById("templateNameField"),
+  documentNameTemplate: document.getElementById("documentNameTemplate"),
   documentNameField: document.getElementById("documentNameField"),
   documentName: document.getElementById("documentName"),
   writtenBy: document.getElementById("writtenBy"),
@@ -288,6 +301,7 @@ function bindEvents() {
     if (event.target === elements.documentName) {
       state.autoFilledEcDocumentName = false;
       state.autoFilledSopDocumentName = false;
+      state.autoFilledRecordTemplateDocumentName = false;
     }
     if (event.target === elements.extraCode && state.selectedCategory === "EC") {
       normalizeEcOrderInput();
@@ -301,6 +315,13 @@ function bindEvents() {
   });
   elements.form.addEventListener("change", event => {
     hideSuccessActions();
+    if (event.target === elements.documentNameSource) {
+      state.autoFilledRecordTemplateDocumentName = false;
+      refreshRecordDocumentNameMode({ force: true });
+    }
+    if (event.target === elements.documentNameTemplate) {
+      syncRecordTemplateSelectionToDocumentName({ force: true });
+    }
     applyTemplateDependentFields();
     if (state.selectedCategory === "EC" && event.target === elements.extraCode) {
       normalizeEcOrderInput();
@@ -315,6 +336,7 @@ function bindEvents() {
     updateReferenceLabel();
     syncReferenceVisibility();
     syncDocumentNameVisibility();
+    refreshRecordDocumentNameMode();
     updatePreview();
   });
   elements.form.addEventListener("submit", submitRequest);
@@ -483,6 +505,7 @@ function applyCategoryDefaults() {
     syncReferenceVisibility();
     syncDocumentNameVisibility();
     updateReferenceLabel();
+    refreshRecordDocumentNameMode();
     return;
   }
 
@@ -511,6 +534,7 @@ function applyCategoryDefaults() {
   applyTemplateDependentFields();
   syncReferenceVisibility();
   syncDocumentNameVisibility();
+  refreshRecordDocumentNameMode();
 }
 
 function applyExtraFieldRules(formRule) {
@@ -765,7 +789,11 @@ function applyTemplateDependentFields() {
     const formRule = CATEGORY_FORM_RULES.MR;
     elements.referenceValue.placeholder = incomingInspection ? "1501-1107" : formRule.referencePlaceholder;
     setReferenceOptions(incomingInspection ? EXCEL_REFERENCE_OPTIONS.SOP_INCOMING : formRule.referenceOptions);
-    if (incomingInspection) elements.documentName.value = "";
+    if (incomingInspection) {
+      elements.documentName.value = "";
+      state.autoFilledEcDocumentName = false;
+      state.autoFilledRecordTemplateDocumentName = false;
+    }
   }
 }
 
@@ -790,6 +818,133 @@ function applySopIncomingDocumentName(options = {}) {
   }
 
   return false;
+}
+
+function refreshRecordDocumentNameMode(options = {}) {
+  if (!elements.documentNameModeFields || !elements.documentNameField || !elements.documentName) return;
+
+  const isRecordRequest = state.selectedCategory === "R";
+  const skipDocumentName = isDocumentNameSkippedForCurrentSelection();
+  elements.documentNameModeFields.classList.toggle("hidden", !isRecordRequest);
+
+  if (skipDocumentName) {
+    elements.documentNameModeFields.classList.add("hidden");
+    elements.templateNameField?.classList.add("hidden");
+    elements.documentNameField.classList.add("hidden");
+    elements.documentName.disabled = true;
+    elements.documentName.value = "";
+    state.autoFilledRecordTemplateDocumentName = false;
+    return;
+  }
+
+  if (!isRecordRequest) {
+    elements.templateNameField?.classList.add("hidden");
+    elements.documentNameField.classList.remove("hidden");
+    elements.documentName.disabled = false;
+    return;
+  }
+
+  if (!elements.documentNameSource.value) elements.documentNameSource.value = "template";
+  const useTemplate = elements.documentNameSource.value === "template";
+  elements.templateNameField?.classList.toggle("hidden", !useTemplate);
+  elements.documentNameField.classList.toggle("hidden", useTemplate);
+  elements.documentName.disabled = useTemplate;
+
+  if (!useTemplate) {
+    if (options.force && state.autoFilledRecordTemplateDocumentName) {
+      elements.documentName.value = "";
+      state.autoFilledRecordTemplateDocumentName = false;
+    }
+    return;
+  }
+
+  loadRecordTemplateDocumentNames()
+    .then(() => {
+      renderRecordTemplateOptions();
+      syncRecordTemplateSelectionToDocumentName({ force: true });
+      updatePreview();
+    })
+    .catch(error => {
+      renderRecordTemplateOptions([]);
+      showMessage("Template list could not be loaded. Select Other and enter the document name manually. " + error.message, "warning");
+    });
+}
+
+async function loadRecordTemplateDocumentNames() {
+  if (state.recordTemplateDocumentNamesLoaded) return;
+  const data = await apiGet("/api/documents");
+  state.recordTemplateDocumentNames = buildRecordTemplateDocumentNames(data.documents || []);
+  state.recordTemplateDocumentNamesLoaded = true;
+}
+
+function renderRecordTemplateOptions(options = state.recordTemplateDocumentNames) {
+  if (!elements.documentNameTemplate) return;
+  const currentValue = elements.documentNameTemplate.value;
+
+  if (!options.length) {
+    elements.documentNameTemplate.disabled = true;
+    elements.documentNameTemplate.innerHTML = '<option value="">No registered templates available</option>';
+    elements.documentName.value = "";
+    state.autoFilledRecordTemplateDocumentName = false;
+    return;
+  }
+
+  elements.documentNameTemplate.disabled = false;
+  elements.documentNameTemplate.innerHTML = options
+    .map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`)
+    .join("");
+  elements.documentNameTemplate.value = options.includes(currentValue) ? currentValue : options[0];
+}
+
+function buildRecordTemplateDocumentNames(documents) {
+  const byName = new Map();
+  for (const documentRecord of documents) {
+    if (!isRegisteredTemplateDocument(documentRecord)) continue;
+    const documentName = stripTrailingTemplateLabel(documentRecord.document_name);
+    if (!documentName) continue;
+    const key = documentName.toLocaleLowerCase("en-US");
+    if (!byName.has(key)) byName.set(key, documentName);
+  }
+  return [...byName.values()].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+}
+
+function isRegisteredTemplateDocument(documentRecord) {
+  return String(documentRecord.document_no || "").startsWith("XQT-")
+    || documentRecord.category === "TEMPLATE";
+}
+
+function stripTrailingTemplateLabel(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s*[-:_]?\s*template(?:[_\-\s]?[a-z]{2})?\s*$/i, "")
+    .trim();
+}
+
+function syncRecordTemplateSelectionToDocumentName(options = {}) {
+  if (state.selectedCategory !== "R" || !elements.documentNameSource || elements.documentNameSource.value !== "template") return false;
+  if (!elements.documentNameTemplate || elements.documentNameTemplate.disabled) return false;
+
+  const selectedName = elements.documentNameTemplate.value.trim();
+  if (!selectedName) {
+    elements.documentName.value = "";
+    state.autoFilledRecordTemplateDocumentName = false;
+    return false;
+  }
+
+  if (options.force || state.autoFilledRecordTemplateDocumentName || !elements.documentName.value.trim() || elements.documentName.disabled) {
+    elements.documentName.value = selectedName;
+    state.autoFilledRecordTemplateDocumentName = true;
+    return true;
+  }
+  return false;
+}
+
+function isDocumentNameSkippedForCurrentSelection() {
+  return state.selectedCategory === "MR" && isMrIncomingInspectionSelected();
+}
+
+function isMrIncomingInspectionSelected() {
+  return elements.referenceType.value === MR_INCOMING_INSPECTION_REFERENCE_TYPE;
 }
 
 function updateReferenceLabel() {
@@ -830,6 +985,7 @@ function isEcRTypeSelected() {
 
 function collectFormData() {
   const isTemplate = state.selectedCategory === "TEMPLATE";
+  syncRecordTemplateSelectionToDocumentName({ force: true });
   const creationDate = syncCreationDate();
   return {
     category: isTemplate ? "QMS" : (state.selectedCategory || ""),
@@ -1182,19 +1338,6 @@ function formatStatus(status) {
   return labels[status] || status || "-";
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("tr-TR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
 function activityIcon(type) {
   if (type === "part") {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 8-9-5-9 5 9 5 9-5Z"></path><path d="M3 8v8l9 5 9-5V8"></path></svg>';
@@ -1210,6 +1353,9 @@ function clearForm(options = {}) {
   state.documentNoTouched = false;
   state.autoFilledEcDocumentName = false;
   state.autoFilledSopDocumentName = false;
+  state.autoFilledRecordTemplateDocumentName = false;
+  if (elements.documentNameSource) elements.documentNameSource.value = "template";
+  if (elements.documentNameTemplate) elements.documentNameTemplate.value = "";
   elements.documentNo.value = "";
   elements.referenceValue.value = "";
   elements.documentName.value = "";
@@ -1272,44 +1418,8 @@ function currentCategory() {
   return state.categories.find(category => category.code === state.selectedCategory) || null;
 }
 
-async function apiGet(path) {
-  const response = await fetch(path, {
-    headers: Auth.authHeaders()
-  });
-  return parseResponse(response);
-}
-
-async function apiPost(path, body, signal) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      ...Auth.authHeaders(),
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal
-  });
-  return parseResponse(response);
-}
-
-async function parseResponse(response) {
-  const data = await response.json();
-  if (!response.ok) {
-    const message = data.message || (data.errors && data.errors.join(" ")) || "Request failed.";
-    throw new Error(message);
-  }
-  return data;
-}
-
-function showMessage(message, type) {
-  elements.messageBox.textContent = message;
-  elements.messageBox.className = `message-box ${type}`;
-}
-
-function hideMessage() {
-  elements.messageBox.className = "message-box hidden";
-  elements.messageBox.textContent = "";
-}
+const showMessage = (message, type) => window.XeraUi.showMessage(elements.messageBox, message, type);
+const hideMessage = () => window.XeraUi.hideMessage(elements.messageBox);
 
 function showOverviewMessage(message, type) {
   elements.overviewMessageBox.textContent = message;
@@ -1321,187 +1431,4 @@ function hideOverviewMessage() {
   elements.overviewMessageBox.textContent = "";
 }
 
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-// record-template-document-name-20260609
-(function installRecordTemplateDocumentNamePatch() {
-  if (globalThis.__recordTemplateDocumentNamePatchInstalled) return;
-  globalThis.__recordTemplateDocumentNamePatchInstalled = true;
-
-  state.recordTemplateDocumentNames = state.recordTemplateDocumentNames || [];
-  state.recordTemplateDocumentNamesLoaded = Boolean(state.recordTemplateDocumentNamesLoaded);
-  state.autoFilledRecordTemplateDocumentName = false;
-
-  Object.assign(elements, {
-    documentNameModeFields: document.getElementById("documentNameModeFields"),
-    documentNameSource: document.getElementById("documentNameSource"),
-    templateNameField: document.getElementById("templateNameField"),
-    documentNameTemplate: document.getElementById("documentNameTemplate"),
-    documentNameField: document.getElementById("documentNameField")
-  });
-
-  const originalApplyCategoryDefaults = applyCategoryDefaults;
-  applyCategoryDefaults = function patchedApplyCategoryDefaults() {
-    const result = originalApplyCategoryDefaults.apply(this, arguments);
-    refreshRecordDocumentNameMode();
-    return result;
-  };
-
-  const originalClearForm = clearForm;
-  clearForm = function patchedClearForm() {
-    if (elements.documentNameSource) elements.documentNameSource.value = "template";
-    if (elements.documentNameTemplate) elements.documentNameTemplate.value = "";
-    state.autoFilledRecordTemplateDocumentName = false;
-    return originalClearForm.apply(this, arguments);
-  };
-
-  const originalCollectFormData = collectFormData;
-  collectFormData = function patchedCollectFormData() {
-    syncRecordTemplateSelectionToDocumentName({ force: true });
-    return originalCollectFormData.apply(this, arguments);
-  };
-
-  document.addEventListener("DOMContentLoaded", () => {
-    if (!elements.documentNameSource || !elements.documentNameTemplate) return;
-
-    elements.documentNameSource.addEventListener("change", () => {
-      state.autoFilledRecordTemplateDocumentName = false;
-      refreshRecordDocumentNameMode({ force: true });
-      updatePreview();
-    });
-
-    elements.documentNameTemplate.addEventListener("change", () => {
-      syncRecordTemplateSelectionToDocumentName({ force: true });
-      updatePreview();
-    });
-  });
-
-  function refreshRecordDocumentNameMode(options = {}) {
-    if (!elements.documentNameModeFields || !elements.documentNameField || !elements.documentName) return;
-
-    const isRecordRequest = state.selectedCategory === "R";
-    const skipDocumentName = state.selectedCategory === "MR" && isMrIncomingInspectionSelected();
-    const lockEcDocumentName = isEcDocumentNameLocked();
-    elements.documentNameModeFields.classList.toggle("hidden", !isRecordRequest);
-
-    if (skipDocumentName) {
-      elements.templateNameField?.classList.add("hidden");
-      elements.documentNameField.classList.add("hidden");
-      elements.documentName.disabled = true;
-      elements.documentName.value = "";
-      return;
-    }
-
-    if (!isRecordRequest) {
-      elements.templateNameField?.classList.add("hidden");
-      elements.documentNameField.classList.remove("hidden");
-      elements.documentName.disabled = lockEcDocumentName;
-      return;
-    }
-
-    if (!elements.documentNameSource.value) elements.documentNameSource.value = "template";
-    const useTemplate = elements.documentNameSource.value === "template";
-    elements.templateNameField?.classList.toggle("hidden", !useTemplate);
-    elements.documentNameField.classList.toggle("hidden", useTemplate);
-    elements.documentName.disabled = useTemplate;
-
-    if (!useTemplate) {
-      if (options.force && state.autoFilledRecordTemplateDocumentName) {
-        elements.documentName.value = "";
-        state.autoFilledRecordTemplateDocumentName = false;
-      }
-      return;
-    }
-
-    loadRecordTemplateDocumentNames()
-      .then(() => {
-        renderRecordTemplateOptions();
-        syncRecordTemplateSelectionToDocumentName({ force: true });
-        updatePreview();
-      })
-      .catch(error => {
-        renderRecordTemplateOptions([]);
-        showMessage("Template list could not be loaded. Select Other and enter the document name manually. " + error.message, "warning");
-      });
-  }
-
-  async function loadRecordTemplateDocumentNames() {
-    if (state.recordTemplateDocumentNamesLoaded) return;
-    const data = await apiGet("/api/documents");
-    state.recordTemplateDocumentNames = buildRecordTemplateDocumentNames(data.documents || []);
-    state.recordTemplateDocumentNamesLoaded = true;
-  }
-
-  function renderRecordTemplateOptions(options = state.recordTemplateDocumentNames) {
-    if (!elements.documentNameTemplate) return;
-    const currentValue = elements.documentNameTemplate.value;
-
-    if (!options.length) {
-      elements.documentNameTemplate.disabled = true;
-      elements.documentNameTemplate.innerHTML = '<option value="">No registered templates available</option>';
-      elements.documentName.value = "";
-      state.autoFilledRecordTemplateDocumentName = false;
-      return;
-    }
-
-    elements.documentNameTemplate.disabled = false;
-    elements.documentNameTemplate.innerHTML = options
-      .map(option => '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>')
-      .join("");
-    elements.documentNameTemplate.value = options.includes(currentValue) ? currentValue : options[0];
-  }
-
-  function buildRecordTemplateDocumentNames(documents) {
-    const byName = new Map();
-    for (const documentRecord of documents) {
-      if (!isRegisteredTemplateDocument(documentRecord)) continue;
-      const documentName = stripTrailingTemplateLabel(documentRecord.document_name);
-      if (!documentName) continue;
-      const key = documentName.toLocaleLowerCase("en-US");
-      if (!byName.has(key)) byName.set(key, documentName);
-    }
-    return [...byName.values()].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
-  }
-
-  function isRegisteredTemplateDocument(documentRecord) {
-    return String(documentRecord.document_no || "").startsWith("XQT-")
-      || documentRecord.category === "TEMPLATE";
-  }
-
-  function stripTrailingTemplateLabel(value) {
-    return String(value || "")
-      .trim()
-      .replace(/\s*[-–—:_]?\s*template(?:[_\-\s]?[a-z]{2})?\s*$/i, "")
-      .trim();
-  }
-
-  function syncRecordTemplateSelectionToDocumentName(options = {}) {
-    if (state.selectedCategory !== "R" || !elements.documentNameSource || elements.documentNameSource.value !== "template") return false;
-    if (!elements.documentNameTemplate || elements.documentNameTemplate.disabled) return false;
-
-    const selectedName = elements.documentNameTemplate.value.trim();
-    if (!selectedName) {
-      elements.documentName.value = "";
-      state.autoFilledRecordTemplateDocumentName = false;
-      return false;
-    }
-
-    if (options.force || state.autoFilledRecordTemplateDocumentName || !elements.documentName.value.trim() || elements.documentName.disabled) {
-      elements.documentName.value = selectedName;
-      state.autoFilledRecordTemplateDocumentName = true;
-      return true;
-    }
-    return false;
-  }
-})();
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);

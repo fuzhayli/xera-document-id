@@ -20,7 +20,9 @@
 
   let token = "";
   try {
-    token = localStorage.getItem("xeraSessionToken") || "";
+    token = sessionStorage.getItem("xeraSessionToken")
+      || localStorage.getItem("xeraSessionToken")
+      || "";
   } catch {
     token = "";
   }

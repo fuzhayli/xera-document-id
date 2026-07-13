@@ -2596,11 +2596,23 @@ tbody tr:last-child td {
   text-decoration: none;
 }
 
+.auth-help-text {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: right;
+}
+
 .auth-submit,
 .auth-create {
   width: 100%;
   min-height: 58px;
   font-size: 16px;
+}
+
+.auth-divider[hidden],
+.auth-create[hidden] {
+  display: none !important;
 }
 
 .auth-divider {
@@ -3216,6 +3228,7 @@ tbody tr:last-child td {
 [data-theme="dark"] .permission-field label,
 [data-theme="dark"] .permission-checks label,
 [data-theme="dark"] .remember-me,
+[data-theme="dark"] .auth-help-text,
 [data-theme="dark"] legend {
   color: var(--muted-strong) !important;
 }

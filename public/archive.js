@@ -1,6 +1,14 @@
 const state = {
   archive: []
 };
+const {
+  apiGet,
+  escapeHtml,
+  formatDateTime,
+  normalizeSearch,
+  getActiveSearchFields,
+  matchesScopedSearch
+} = window.XeraUi;
 
 const CATEGORY_LABELS = {
   D: "D (General Purpose Document)",
@@ -41,6 +49,7 @@ const elements = {
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
   archiveBody: document.getElementById("archiveBody")
 };
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -125,7 +134,7 @@ function getFilteredArchive() {
     if (year && record.year_yy !== year) return false;
     if (!search) return true;
 
-    return matchesScopedSearch(record, search, searchFields);
+    return matchesScopedSearch(record, search, searchFields, DOCUMENT_ARCHIVE_SEARCH_FIELDS);
   });
 }
 
@@ -136,49 +145,6 @@ function clearFilters() {
   window.XeraSearchScopes?.clear(DOCUMENT_ARCHIVE_SEARCH_SCOPE_ID);
   renderArchive();
 }
-
-function getActiveSearchFields(scopeId, searchFieldMap) {
-  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
-  const validSelected = selected.filter(field => searchFieldMap[field]);
-  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
-}
-
-function matchesScopedSearch(record, search, searchFields) {
-  return searchFields.some(field => normalizeSearch(flattenSearchValue(DOCUMENT_ARCHIVE_SEARCH_FIELDS[field](record))).includes(search));
-}
-
-function flattenSearchValue(value) {
-  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
-}
-
-async function apiGet(path) {
-  const response = await fetch(path, { headers: Auth.authHeaders() });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
-function normalizeSearch(value) {
-  return String(value || "").toLocaleLowerCase("tr-TR").trim();
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("tr-TR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
 function getDocumentCategoryCode(record) {
   if (String(record.document_no || "").startsWith("XQT-")) return "TEMPLATE";
   return record.category || "";
@@ -191,13 +157,4 @@ function formatDocumentCategory(record) {
 
 function formatCategory(category) {
   return CATEGORY_LABELS[category] || category || "-";
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
