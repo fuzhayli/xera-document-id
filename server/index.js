@@ -5,8 +5,42 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const { createDatabase } = require("./db");
+const {
+  readJson,
+  readBinary,
+  sendJson,
+  sendBinary,
+  sendEmpty,
+  sendRedirect,
+  serveStatic,
+  httpError
+} = require("./http-utils");
 const { ensurePendingDocumentRevisionConstraint } = require("./migrations");
+const {
+  CATEGORY_RULES,
+  REVISION_CATEGORY_CODES,
+  MARKETING_MATERIAL_TYPES,
+  MARKETING_LANGUAGE_CODES,
+  MARKETING_TYPE_ALIASES,
+  PART_PROJECTS,
+  PART_MAIN_CODES,
+  PART_REVISION_MODES,
+  PART_REVISION_REQUEST_TYPES,
+  PART_PROJECT_CODES,
+  PART_MAIN_CODE_MAP,
+  PART_REVISION_MODE_MAP,
+  USER_ROLES,
+  ADMIN_PERMISSIONS,
+  ROLE_LABELS,
+  ROLE_PERMISSIONS,
+  ROLE_CHECK_SQL
+} = require("./rules");
 const { toDateValue } = require("./time");
+const {
+  buildPartsWorkbook,
+  buildCustomPartsWorkbook,
+  buildDocumentsWorkbook
+} = require("./workbook");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const DATA_DIR = path.join(ROOT_DIR, "data");
@@ -18,151 +52,20 @@ const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 const PORT = Number(process.env.PORT || 32780);
 const NODE_ENV = process.env.NODE_ENV || "development";
-const ALLOW_PUBLIC_SIGNUP = !parseBooleanEnv(process.env.DISABLE_PUBLIC_SIGNUP, false);
+const ALLOW_PUBLIC_SIGNUP = !parseBooleanEnv(
+  process.env.DISABLE_PUBLIC_SIGNUP,
+  NODE_ENV === "production"
+);
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Istanbul";
 const MR_INCOMING_INSPECTION_REFERENCE_TYPES = new Set(["incominginspection", "incoming-inspection", "incoming"]);
-
-// Document format rules are intentionally centralized here; every preview,
-// approval, filename export and revision update path reads from this object.
-const CATEGORY_RULES = {
-  D: {
-    code: "D",
-    name: "General Purpose Document",
-    prefix: "XD",
-    suffixType: "revision",
-    requiresSequence: true,
-    implemented: true,
-    example: "XD-26-001_GR10X-40K_Risk Management Report_r00"
-  },
-  R: {
-    code: "R",
-    name: "Record Purpose Document",
-    prefix: "XR",
-    suffixType: "date",
-    requiresSequence: true,
-    implemented: true,
-    example: "XR-26-001_R&D_Literature Search Report_20260326"
-  },
-  MD: {
-    code: "MD",
-    name: "Manufacturing Dynamic Document",
-    prefix: "XMD",
-    suffixType: "revision",
-    requiresSequence: true,
-    implemented: true,
-    example: "XMD-26-001_GR10X-40K_Product Wastage Follow-up_r00"
-  },
-  MR: {
-    code: "MR",
-    name: "Manufacturing Record Document",
-    prefix: "XMR",
-    suffixType: "date",
-    requiresSequence: true,
-    implemented: true,
-    example: "XMR-26-001_GR10X-40K_Final Inspection Report_20260505"
-  },
-  EC: {
-    code: "EC",
-    name: "Engineering Change",
-    prefix: "XEC",
-    suffixType: "revision",
-    requiresSequence: true,
-    implemented: true,
-    example: "XEC-26A-R_GR10X-40K_Critical malfunction of motor_r00"
-  },
-  QMS: {
-    code: "QMS",
-    name: "Quality Management",
-    prefix: "XQ",
-    suffixType: "revision",
-    requiresSequence: true,
-    implemented: true,
-    example: "XQP-13_Control of Manufacturing Realization_r00"
-  },
-  SOP: {
-    code: "SOP",
-    name: "SOP / Instruction",
-    prefix: "XQS",
-    suffixType: "revision",
-    requiresSequence: true,
-    implemented: true,
-    example: "XQS-13-01_Soldering_r00"
-  },
-  MARKETING: {
-    code: "MARKETING",
-    name: "Marketing Material ID",
-    prefix: "XERA",
-    suffixType: "marketing",
-    requiresSequence: false,
-    implemented: true,
-    example: "XERA-GR10X-26BR01-ENV1"
-  }
-};
-const REVISION_CATEGORY_CODES = Object.values(CATEGORY_RULES)
-  .filter(rule => rule.suffixType === "revision")
-  .map(rule => rule.code);
-const MARKETING_MATERIAL_TYPES = ["CA", "BR", "LE", "GE"];
-const MARKETING_LANGUAGE_CODES = ["EN", "TR", "KR"];
-const MARKETING_TYPE_ALIASES = {
-  B: "BR",
-  C: "CA",
-  L: "LE",
-  G: "GE"
-};
-const PART_PROJECTS = [
-  { code: "X101", description: "GR10X (Turkey)" },
-  { code: "X102", description: "VR10X (Turkey)" },
-  { code: "X103", description: "6Way (Turkey)" },
-  { code: "X104", description: "Long Format Detector (Turkey)" },
-  { code: "X105", description: "GR20X" },
-  { code: "1501", description: "GR10X (Korea)" }
-];
-const PART_MAIN_CODES = [
-  { code: "1", name: "Finished Product" },
-  { code: "2", name: "Sheet Metal & Aluminium & Pipe" },
-  { code: "3", name: "Plastic & Rubber & Laminate" },
-  { code: "4", name: "CNC Machining" },
-  { code: "5", name: "Sub Assembly" },
-  { code: "6", name: "Firmware" },
-  { code: "7", name: "Electric Parts (PCBA, Cable, IC, etc.)" },
-  { code: "8", name: "Dummy (Packing, Label, Sticker, Assembly Tools etc.)" },
-  { code: "9", name: "Miscellaneous Bolt, Screw, Nut, etc." }
-];
-const PART_REVISION_MODES = [
-  { code: "released", name: "Released Revision", defaultRevision: "01A", pattern: "^\\d{2}[A-Z]$", example: "01A" },
-  { code: "design", name: "Design-stage Code", defaultRevision: "D01", pattern: "^D\\d{2}$", example: "D01" },
-  { code: "change", name: "Design-change Intermediate Code", defaultRevision: "C01", pattern: "^C\\d{2}$", example: "C01" }
-];
-const PART_REVISION_REQUEST_TYPES = [
-  { code: "minor", name: "Minor Revision" },
-  { code: "major", name: "Major Revision" }
-];
-const PART_PROJECT_CODES = PART_PROJECTS.map(project => project.code);
-const PART_MAIN_CODE_MAP = Object.fromEntries(PART_MAIN_CODES.map(mainCode => [mainCode.code, mainCode]));
-const PART_REVISION_MODE_MAP = Object.fromEntries(PART_REVISION_MODES.map(mode => [mode.code, mode]));
-const USER_ROLES = {
-  USER: "user",
-  PART_ADMIN: "part_admin",
-  DOCUMENT_ADMIN: "document_admin",
-  USER_ADMIN: "user_admin",
-  ALL_ADMIN: "all_admin"
-};
-const ADMIN_PERMISSIONS = ["part_admin", "document_admin", "user_admin"];
-const ROLE_LABELS = {
-  [USER_ROLES.USER]: "User",
-  [USER_ROLES.PART_ADMIN]: "Part List Admin",
-  [USER_ROLES.DOCUMENT_ADMIN]: "Document List Admin",
-  [USER_ROLES.USER_ADMIN]: "User Permissions Admin",
-  [USER_ROLES.ALL_ADMIN]: "All Admin"
-};
-const ROLE_PERMISSIONS = {
-  [USER_ROLES.USER]: [],
-  [USER_ROLES.PART_ADMIN]: ["part_admin"],
-  [USER_ROLES.DOCUMENT_ADMIN]: ["document_admin"],
-  [USER_ROLES.USER_ADMIN]: ["user_admin"],
-  [USER_ROLES.ALL_ADMIN]: ["part_admin", "document_admin", "user_admin"]
-};
-const ROLE_CHECK_SQL = "'user', 'part_admin', 'document_admin', 'user_admin', 'all_admin'";
+const WORKBOOK_ZIP_ENTRY_LIMIT = 2048;
+const WORKBOOK_ENTRY_SIZE_LIMIT = 25_000_000;
+const WORKBOOK_TOTAL_SIZE_LIMIT = 50_000_000;
+const WORKBOOK_ENTRY_NAMES = new Set([
+  "xl/sharedStrings.xml",
+  "xl/worksheets/sheet1.xml",
+  "xl/worksheets/sheet2.xml"
+]);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!TURSO_DATABASE_URL) {
@@ -202,11 +105,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-      return serveStatic(res, url.pathname);
+      return serveStatic(res, url.pathname, PUBLIC_DIR);
     }
 
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return sendJson(res, 200, { ok: true, database: maskDatabaseUrl(TURSO_DATABASE_URL) });
+      await db.prepare("SELECT 1 AS ok").get();
+      return sendJson(res, 200, { ok: true });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/signup") {
@@ -723,9 +627,12 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 404, { error: "not_found", message: "Endpoint not found." });
   } catch (error) {
     const status = error.statusCode || 500;
+    if (status >= 500) console.error(error);
     return sendJson(res, status, {
       error: error.code || "internal_error",
-      message: error.message
+      message: status >= 500 && NODE_ENV === "production"
+        ? "Internal server error."
+        : error.message
     });
   }
 });
@@ -1562,6 +1469,17 @@ function extractHardwareRows(rows) {
   }
 
   return hardware;
+}
+
+function columnName(index) {
+  let name = "";
+  let current = index;
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    current = Math.floor((current - 1) / 26);
+  }
+  return name;
 }
 
 function normalizePartRequestInput(body, user = null) {
@@ -3038,35 +2956,75 @@ function cleanWorkbookText(value) {
 function readZipEntries(filePath) {
   const buffer = fs.readFileSync(filePath);
   const eocdOffset = findEndOfCentralDirectory(buffer);
-  if (eocdOffset < 0) throw new Error(`Invalid zip file: ${filePath}`);
+  if (eocdOffset < 0 || eocdOffset + 22 > buffer.length) {
+    throw httpError(422, "invalid_workbook", "The uploaded file is not a valid XLSX workbook.");
+  }
 
   const entryCount = buffer.readUInt16LE(eocdOffset + 10);
+  if (entryCount > WORKBOOK_ZIP_ENTRY_LIMIT) {
+    throw httpError(422, "invalid_workbook", "The workbook contains too many ZIP entries.");
+  }
   const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
   const entries = new Map();
   let offset = centralDirectoryOffset;
+  let extractedBytes = 0;
 
   for (let index = 0; index < entryCount; index += 1) {
-    if (buffer.readUInt32LE(offset) !== 0x02014b50) throw new Error("Invalid zip central directory.");
+    if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw httpError(422, "invalid_workbook", "The workbook ZIP directory is invalid.");
+    }
     const compressionMethod = buffer.readUInt16LE(offset + 10);
     const compressedSize = buffer.readUInt32LE(offset + 20);
+    const uncompressedSize = buffer.readUInt32LE(offset + 24);
     const fileNameLength = buffer.readUInt16LE(offset + 28);
     const extraLength = buffer.readUInt16LE(offset + 30);
     const commentLength = buffer.readUInt16LE(offset + 32);
     const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+    const nextOffset = offset + 46 + fileNameLength + extraLength + commentLength;
+    if (nextOffset > buffer.length || localHeaderOffset + 30 > buffer.length) {
+      throw httpError(422, "invalid_workbook", "The workbook ZIP entry is truncated.");
+    }
     const fileName = buffer.toString("utf8", offset + 46, offset + 46 + fileNameLength).replaceAll("\\", "/");
 
-    const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
-    const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
-    const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
-    const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
-    const data = compressionMethod === 0
-      ? Buffer.from(compressed)
-      : compressionMethod === 8
-        ? zlib.inflateRawSync(compressed)
-        : null;
-    if (data) entries.set(fileName, data);
+    if (WORKBOOK_ENTRY_NAMES.has(fileName)) {
+      if (uncompressedSize > WORKBOOK_ENTRY_SIZE_LIMIT
+        || extractedBytes + uncompressedSize > WORKBOOK_TOTAL_SIZE_LIMIT) {
+        throw httpError(413, "workbook_too_large", "The expanded workbook is too large.");
+      }
 
-    offset += 46 + fileNameLength + extraLength + commentLength;
+      if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+        throw httpError(422, "invalid_workbook", "The workbook ZIP entry header is invalid.");
+      }
+      const localNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const dataEnd = dataStart + compressedSize;
+      if (dataEnd > buffer.length) {
+        throw httpError(422, "invalid_workbook", "The workbook ZIP data is truncated.");
+      }
+      const compressed = buffer.subarray(dataStart, dataEnd);
+      let data;
+      try {
+        data = compressionMethod === 0
+          ? Buffer.from(compressed)
+          : compressionMethod === 8
+            ? zlib.inflateRawSync(compressed, { maxOutputLength: WORKBOOK_ENTRY_SIZE_LIMIT })
+            : null;
+      } catch {
+        throw httpError(422, "invalid_workbook", "The workbook contains an invalid compressed entry.");
+      }
+      if (!data) {
+        throw httpError(422, "invalid_workbook", "The workbook uses an unsupported ZIP compression method.");
+      }
+      if (data.length > WORKBOOK_ENTRY_SIZE_LIMIT
+        || extractedBytes + data.length > WORKBOOK_TOTAL_SIZE_LIMIT) {
+        throw httpError(413, "workbook_too_large", "The expanded workbook is too large.");
+      }
+      extractedBytes += data.length;
+      entries.set(fileName, data);
+    }
+
+    offset = nextOffset;
   }
 
   return entries;
@@ -6066,9 +6024,7 @@ async function adminSetUserPassword(userId, actor, body) {
     WHERE id = ?
   `).run(passwordRecord.hash, passwordRecord.salt, target.id);
 
-  if (target.id !== actor.id) {
-    await db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(target.id);
-  }
+  await db.prepare("DELETE FROM user_sessions WHERE user_id = ?").run(target.id);
 
   await insertAudit(actor.id, "user", target.id, "user.password_reset", null, publicUser(target));
   return { ok: true, user: publicUser(await getUserById(target.id)) };
@@ -6274,7 +6230,7 @@ async function logoutUser(req) {
 function validateAuthInput({ displayName, position, email, password, isSignup }) {
   if (isSignup && !displayName) throw httpError(422, "validation_failed", "Full name is required.");
   if (isSignup && !position) throw httpError(422, "validation_failed", "Position is required.");
-  if (!email.endsWith("@xera.com.tr")) throw httpError(422, "validation_failed", "Email must use @xera.com.tr.");
+  if (!/^[^@\s]+@xera\.com\.tr$/.test(email)) throw httpError(422, "validation_failed", "Email must use @xera.com.tr.");
   if (password.length < 8) throw httpError(422, "validation_failed", "Password must be at least 8 characters.");
 }
 
@@ -6288,8 +6244,10 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
 }
 
 function verifyPassword(password, salt, expectedHash) {
-  const actual = hashPassword(password, salt).hash;
-  return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expectedHash, "hex"));
+  const actualBuffer = Buffer.from(hashPassword(password, salt).hash, "hex");
+  const expectedBuffer = Buffer.from(String(expectedHash || ""), "hex");
+  return actualBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 async function createSession(userId) {
@@ -6558,395 +6516,4 @@ function maskDatabaseUrl(value) {
   } catch {
     return String(value).replace(/\/\/([^:@]+):([^@]+)@/, "//***:***@");
   }
-}
-
-function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", chunk => {
-      body += chunk;
-      if (body.length > 1_000_000) {
-        reject(httpError(413, "payload_too_large", "Request body is too large."));
-        req.destroy();
-      }
-    });
-    req.on("end", () => {
-      if (!body.trim()) return resolve({});
-      try {
-        resolve(JSON.parse(body));
-      } catch {
-        reject(httpError(400, "invalid_json", "Request body must be valid JSON."));
-      }
-    });
-  });
-}
-
-function readBinary(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on("data", chunk => {
-      chunks.push(chunk);
-      const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-      if (totalLength > 20_000_000) {
-        reject(httpError(413, "payload_too_large", "Excel file is too large."));
-        req.destroy();
-      }
-    });
-    req.on("end", () => {
-      resolve(Buffer.concat(chunks));
-    });
-    req.on("error", err => {
-      reject(err);
-    });
-  });
-}
-
-function sendJson(res, statusCode, payload) {
-  const body = JSON.stringify(payload, null, 2);
-  res.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
-    "content-length": Buffer.byteLength(body)
-  });
-  res.end(body);
-}
-
-function sendBinary(res, statusCode, body, headers = {}) {
-  res.writeHead(statusCode, {
-    ...headers,
-    "content-length": body.length
-  });
-  res.end(body);
-}
-
-function sendEmpty(res, statusCode) {
-  res.writeHead(statusCode);
-  res.end();
-}
-
-function sendRedirect(res, location) {
-  res.writeHead(302, { location });
-  res.end();
-}
-
-function serveStatic(res, requestPath) {
-  const normalizedPath = requestPath === "/" ? "/index.html" : requestPath;
-  const decodedPath = decodeURIComponent(normalizedPath);
-  const absolutePath = path.resolve(PUBLIC_DIR, `.${decodedPath}`);
-
-  const isInsidePublic = absolutePath === PUBLIC_DIR || absolutePath.startsWith(PUBLIC_DIR + path.sep);
-  if (!isInsidePublic) {
-    return sendJson(res, 403, { error: "forbidden", message: "Invalid static path." });
-  }
-
-  if (!fs.existsSync(absolutePath) || fs.statSync(absolutePath).isDirectory()) {
-    return sendJson(res, 404, { error: "not_found", message: "Static file not found." });
-  }
-
-  const contentType = getContentType(absolutePath);
-  const body = fs.readFileSync(absolutePath);
-  res.writeHead(200, {
-    "content-type": contentType,
-    "content-length": body.length
-  });
-  res.end(body);
-}
-
-function getContentType(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  if (extension === ".html") return "text/html; charset=utf-8";
-  if (extension === ".css") return "text/css; charset=utf-8";
-  if (extension === ".js") return "text/javascript; charset=utf-8";
-  if (extension === ".json") return "application/json; charset=utf-8";
-  if (extension === ".svg") return "image/svg+xml";
-  if (extension === ".png") return "image/png";
-  return "application/octet-stream";
-}
-
-function buildPartsWorkbook(rows) {
-  const headers = [
-    "Part Number",
-    "Project Code",
-    "Main Code",
-    "Sequence",
-    "Revision",
-    "Revision Mode",
-    "Part Name",
-    "Description",
-    "Main Category",
-    "Sub Category",
-    "Source",
-    "Requested By",
-    "Checked By",
-    "Reviewed At"
-  ];
-
-  const dataRows = rows.map(row => [
-    row.part_number,
-    row.project_code,
-    row.main_code,
-    row.sequence_no,
-    row.revision_code,
-    row.revision_mode,
-    row.part_name,
-    row.description,
-    row.main_category,
-    row.sub_category,
-    row.source,
-    row.requested_by,
-    row.checked_by,
-    row.approved_at
-  ]);
-
-  const worksheet = buildWorksheetXml([headers, ...dataRows]);
-  return zipStore({
-    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>`,
-    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets>
-    <sheet name="Parts" sheetId="1" r:id="rId1"/>
-  </sheets>
-</workbook>`,
-    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`,
-    "xl/worksheets/sheet1.xml": worksheet
-  });
-}
-
-function buildCustomPartsWorkbook(rows) {
-  const headers = [
-    "Part Number",
-    "Part Name",
-    "Description",
-    "Sub Category"
-  ];
-
-  const dataRows = rows.map(row => [
-    row.part_number,
-    row.part_name,
-    row.description,
-    row.sub_category
-  ]);
-
-  const worksheet = buildWorksheetXml([headers, ...dataRows]);
-  return zipStore({
-    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>`,
-    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets>
-    <sheet name="Custom Export" sheetId="1" r:id="rId1"/>
-  </sheets>
-</workbook>`,
-    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`,
-    "xl/worksheets/sheet1.xml": worksheet
-  });
-}
-
-function buildDocumentsWorkbook(rows) {
-  const headers = [
-    "Document No",
-    "Category",
-    "Year",
-    "Sequence",
-    "Revision",
-    "Reference Type",
-    "Reference",
-    "Document Name",
-    "Written By",
-    "Creation Date",
-    "Checked By",
-    "Filename",
-    "Reviewed At"
-  ];
-
-  const dataRows = rows.map(row => [
-    row.document_no,
-    `${row.category} (${(CATEGORY_RULES[row.category] && CATEGORY_RULES[row.category].name) || row.category})`,
-    row.year_yy,
-    row.sequence_no,
-    row.revision,
-    row.reference_type,
-    row.reference_value,
-    row.document_name,
-    row.written_by,
-    row.creation_date,
-    row.checked_by,
-    row.generated_filename,
-    row.approved_at
-  ]);
-
-  const worksheet = buildWorksheetXml([headers, ...dataRows]);
-  return zipStore({
-    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>`,
-    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets>
-    <sheet name="Documents" sheetId="1" r:id="rId1"/>
-  </sheets>
-</workbook>`,
-    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>`,
-    "xl/worksheets/sheet1.xml": worksheet
-  });
-}
-
-function buildWorksheetXml(rows) {
-  const sheetRows = rows.map((row, rowIndex) => {
-    const rowNumber = rowIndex + 1;
-    const cells = row.map((value, columnIndex) => {
-      const ref = `${columnName(columnIndex + 1)}${rowNumber}`;
-      return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value == null ? "" : value)}</t></is></c>`;
-    }).join("");
-    return `<row r="${rowNumber}">${cells}</row>`;
-  }).join("");
-
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetData>${sheetRows}</sheetData>
-</worksheet>`;
-}
-
-function columnName(index) {
-  let name = "";
-  let current = index;
-  while (current > 0) {
-    const remainder = (current - 1) % 26;
-    name = String.fromCharCode(65 + remainder) + name;
-    current = Math.floor((current - 1) / 26);
-  }
-  return name;
-}
-
-function escapeXml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
-function zipStore(files) {
-  const localParts = [];
-  const centralParts = [];
-  let offset = 0;
-
-  for (const [name, content] of Object.entries(files)) {
-    const nameBuffer = Buffer.from(name, "utf8");
-    const dataBuffer = Buffer.from(content, "utf8");
-    const crc = crc32(dataBuffer);
-
-    const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0);
-    localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt16LE(0x0800, 6);
-    localHeader.writeUInt16LE(0, 8);
-    localHeader.writeUInt16LE(0, 10);
-    localHeader.writeUInt16LE(0, 12);
-    localHeader.writeUInt32LE(crc, 14);
-    localHeader.writeUInt32LE(dataBuffer.length, 18);
-    localHeader.writeUInt32LE(dataBuffer.length, 22);
-    localHeader.writeUInt16LE(nameBuffer.length, 26);
-    localHeader.writeUInt16LE(0, 28);
-
-    localParts.push(localHeader, nameBuffer, dataBuffer);
-
-    const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0);
-    centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
-    centralHeader.writeUInt16LE(0x0800, 8);
-    centralHeader.writeUInt16LE(0, 10);
-    centralHeader.writeUInt16LE(0, 12);
-    centralHeader.writeUInt16LE(0, 14);
-    centralHeader.writeUInt32LE(crc, 16);
-    centralHeader.writeUInt32LE(dataBuffer.length, 20);
-    centralHeader.writeUInt32LE(dataBuffer.length, 24);
-    centralHeader.writeUInt16LE(nameBuffer.length, 28);
-    centralHeader.writeUInt16LE(0, 30);
-    centralHeader.writeUInt16LE(0, 32);
-    centralHeader.writeUInt16LE(0, 34);
-    centralHeader.writeUInt16LE(0, 36);
-    centralHeader.writeUInt32LE(0, 38);
-    centralHeader.writeUInt32LE(offset, 42);
-    centralParts.push(centralHeader, nameBuffer);
-
-    offset += localHeader.length + nameBuffer.length + dataBuffer.length;
-  }
-
-  const centralDirectory = Buffer.concat(centralParts);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);
-  end.writeUInt16LE(0, 6);
-  end.writeUInt16LE(Object.keys(files).length, 8);
-  end.writeUInt16LE(Object.keys(files).length, 10);
-  end.writeUInt32LE(centralDirectory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  end.writeUInt16LE(0, 20);
-
-  return Buffer.concat([...localParts, centralDirectory, end]);
-}
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) {
-      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
-    }
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(buffer) {
-  let crc = 0xffffffff;
-  for (const byte of buffer) {
-    crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function httpError(statusCode, code, message) {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  error.code = code;
-  return error;
 }

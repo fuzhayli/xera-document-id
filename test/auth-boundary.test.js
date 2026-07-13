@@ -25,6 +25,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
       TURSO_AUTH_TOKEN: "",
       INITIAL_ADMIN_PASSWORD: password,
       DISABLE_PUBLIC_SIGNUP: "true",
+      NODE_ENV: "production",
       APP_TIME_ZONE: "Europe/Istanbul"
     },
     windowsHide: true,
@@ -35,6 +36,18 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
 
   try {
     await waitForServer(port, child, () => output);
+
+    const health = await fetch(`http://127.0.0.1:${port}/api/health`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { ok: true });
+    assert.equal(health.headers.get("cache-control"), "no-store");
+    assert.equal(health.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(health.headers.get("x-frame-options"), "DENY");
+
+    const loginPage = await fetch(`http://127.0.0.1:${port}/login.html`);
+    assert.equal(loginPage.status, 200);
+    assert.equal(loginPage.headers.get("cache-control"), "no-store");
+    assert.match(loginPage.headers.get("content-security-policy"), /frame-ancestors 'none'/);
 
     for (const [method, endpoint] of [
       ["GET", "/api/documents"],
@@ -70,6 +83,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     verificationDb = createDatabase({ url: `file:${databasePath}` });
     await verifyMrIncomingInspectionRequest(verificationDb, port, headers);
     await verifyEcRDocumentNamePropagation(verificationDb, port, headers);
+    await verifyLegacyPendingQueues(verificationDb, port, headers);
     await verifyPartEditRollback(verificationDb, port, headers);
     await verifyDocumentEditRollback(verificationDb, port, headers);
   } finally {
@@ -102,6 +116,7 @@ async function verifyMrIncomingInspectionRequest(db, port, headers) {
   const preview = await previewResponse.json();
   assert.equal(preview.valid, true);
   assert.match(preview.generated_filename_preview, /^XMR-\d{2}-001_1501-1107_\d{8}$/);
+  assert.equal(preview.generated_filename_preview.includes("Incoming Inspection"), false);
 
   const requestResponse = await fetch(`http://127.0.0.1:${port}/api/requests`, {
     method: "POST",
@@ -111,6 +126,7 @@ async function verifyMrIncomingInspectionRequest(db, port, headers) {
   assert.equal(requestResponse.status, 201);
   const { request } = await requestResponse.json();
   assert.equal(request.status, "approved");
+  assert.equal(request.category, "MR");
   assert.equal(request.reference_type, "incominginspection");
   assert.equal(request.document_name, "");
   assert.match(request.generated_filename, /^XMR-\d{2}-001_1501-1107_\d{8}$/);
@@ -211,9 +227,102 @@ async function verifyPartEditRollback(db, port, headers) {
     body: JSON.stringify({ part_name: "Changed Part" })
   });
   assert.equal(response.status, 500);
+  assert.equal((await response.json()).message, "Internal server error.");
   const after = await db.prepare("SELECT part_name FROM part_records WHERE id = ?").get(Number(record.lastInsertRowid));
   assert.equal(after.part_name, "Original Part");
   await db.exec("DROP TRIGGER fail_part_request_update");
+}
+
+async function verifyLegacyPendingQueues(db, port, headers) {
+  const admin = await db.prepare("SELECT id FROM users WHERE email = ?").get("admin@xera.com.tr");
+  const now = "2026-06-22T00:00:00.000Z";
+
+  const approveDocument = await db.prepare(`
+    INSERT INTO document_requests (
+      status, category, company_code, year_yy, sequence_no, document_no, revision,
+      reference_type, reference_value, document_name, written_by, creation_date,
+      control_status, generated_filename, requested_by_user_id, created_at, updated_at, payload_json
+    ) VALUES ('pending', 'D', 'X', '26', '901', 'XD-26-901', 'r00',
+      'model', 'LEGACY-MODEL', 'Legacy Pending Document', 'Admin User', '2026-06-22',
+      'controlled', 'XD-26-901_LEGACY-MODEL_Legacy Pending Document_r00', ?, ?, ?, '{}')
+  `).run(admin.id, now, now);
+  const rejectDocument = await db.prepare(`
+    INSERT INTO document_requests (
+      status, category, company_code, year_yy, sequence_no, document_no, revision,
+      reference_type, reference_value, document_name, written_by, creation_date,
+      control_status, generated_filename, requested_by_user_id, created_at, updated_at, payload_json
+    ) VALUES ('pending', 'R', 'X', '26', '902', 'XR-26-902', 'r00',
+      'department', 'R&D', 'Legacy Rejected Record', 'Admin User', '2026-06-22',
+      'controlled', 'XR-26-902_R&D_Legacy Rejected Record_20260622', ?, ?, ?, '{}')
+  `).run(admin.id, now, now);
+  const approvePart = await db.prepare(`
+    INSERT INTO part_requests (
+      status, project_code, main_code, sequence_no, part_number, revision_code,
+      revision_mode, part_name, description, main_category, sub_category,
+      requested_by_user_id, created_at, updated_at, payload_json
+    ) VALUES ('pending', 'X101', '8', '998', 'X101-8998-01A', '01A',
+      'released', 'LEGACY_PART', 'Legacy part description', 'Dummy', 'Test',
+      ?, ?, ?, '{}')
+  `).run(admin.id, now, now);
+  const rejectPart = await db.prepare(`
+    INSERT INTO part_requests (
+      status, project_code, main_code, sequence_no, part_number, revision_code,
+      revision_mode, part_name, description, main_category, sub_category,
+      requested_by_user_id, created_at, updated_at, payload_json
+    ) VALUES ('pending', 'X101', '8', '997', 'X101-8997-01A', '01A',
+      'released', 'LEGACY_REJECT', 'Legacy rejected part', 'Dummy', 'Test',
+      ?, ?, ?, '{}')
+  `).run(admin.id, now, now);
+
+  const documentPending = await fetch(`http://127.0.0.1:${port}/api/admin/requests/pending`, { headers });
+  assert.equal(documentPending.status, 200);
+  const documentPendingData = await documentPending.json();
+  assert.ok(documentPendingData.requests.some(request => Number(request.id) === Number(approveDocument.lastInsertRowid)));
+
+  const partPending = await fetch(`http://127.0.0.1:${port}/api/admin/parts/requests/pending`, { headers });
+  assert.equal(partPending.status, 200);
+  const partPendingData = await partPending.json();
+  assert.ok(partPendingData.requests.some(request => Number(request.id) === Number(approvePart.lastInsertRowid)));
+
+  const approveDocumentResponse = await fetch(`http://127.0.0.1:${port}/api/admin/requests/${approveDocument.lastInsertRowid}/approve`, {
+    method: "POST",
+    headers
+  });
+  assert.equal(approveDocumentResponse.status, 200);
+  const approvedDocumentRecord = await db.prepare("SELECT document_no FROM document_records WHERE request_id = ?").get(Number(approveDocument.lastInsertRowid));
+  assert.equal(approvedDocumentRecord.document_no, "XD-26-901");
+  const documentAudit = await db.prepare("SELECT action FROM audit_logs WHERE entity_type = 'document_request' AND entity_id = ?").get(Number(approveDocument.lastInsertRowid));
+  assert.equal(documentAudit.action, "request.approved");
+
+  const rejectDocumentResponse = await fetch(`http://127.0.0.1:${port}/api/admin/requests/${rejectDocument.lastInsertRowid}/reject`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({ reason: "Legacy cleanup" })
+  });
+  assert.equal(rejectDocumentResponse.status, 200);
+  const rejectedDocument = await db.prepare("SELECT status, reject_reason FROM document_requests WHERE id = ?").get(Number(rejectDocument.lastInsertRowid));
+  assert.equal(rejectedDocument.status, "rejected");
+  assert.equal(rejectedDocument.reject_reason, "Legacy cleanup");
+
+  const approvePartResponse = await fetch(`http://127.0.0.1:${port}/api/admin/parts/requests/${approvePart.lastInsertRowid}/approve`, {
+    method: "POST",
+    headers
+  });
+  assert.equal(approvePartResponse.status, 200);
+  const approvedPartRecord = await db.prepare("SELECT part_number FROM part_records WHERE request_id = ?").get(Number(approvePart.lastInsertRowid));
+  assert.equal(approvedPartRecord.part_number, "X101-8998-01A");
+  const partAudit = await db.prepare("SELECT action FROM audit_logs WHERE entity_type = 'part_request' AND entity_id = ?").get(Number(approvePart.lastInsertRowid));
+  assert.equal(partAudit.action, "part_request.approved");
+
+  const rejectPartResponse = await fetch(`http://127.0.0.1:${port}/api/admin/parts/requests/${rejectPart.lastInsertRowid}/reject`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({ reason: "Legacy part cleanup" })
+  });
+  assert.equal(rejectPartResponse.status, 200);
+  const rejectedPart = await db.prepare("SELECT status, reject_reason FROM part_requests WHERE id = ?").get(Number(rejectPart.lastInsertRowid));
+  assert.equal(rejectedPart.status, "rejected");
+  assert.equal(rejectedPart.reject_reason, "Legacy part cleanup");
 }
 
 async function verifyDocumentEditRollback(db, port, headers) {
@@ -262,6 +371,7 @@ async function verifyDocumentEditRollback(db, port, headers) {
     body: JSON.stringify({ document_name: "Changed Document" })
   });
   assert.equal(response.status, 500);
+  assert.equal((await response.json()).message, "Internal server error.");
   const after = await db.prepare("SELECT document_name FROM document_records WHERE id = ?").get(Number(record.lastInsertRowid));
   assert.equal(after.document_name, "Original Document");
   await db.exec("DROP TRIGGER fail_document_request_update");

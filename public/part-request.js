@@ -10,6 +10,12 @@ const state = {
   partNumberTouched: false,
   requests: []
 };
+const {
+  apiGet,
+  apiPost,
+  escapeHtml,
+  formatDateTime
+} = window.XeraUi;
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -42,6 +48,9 @@ const elements = {
   requestCount: document.getElementById("requestCount"),
   requestsBody: document.getElementById("requestsBody")
 };
+const showMessage = (message, type) => window.XeraUi.showMessage(elements.messageBox, message, type);
+const hideMessage = () => window.XeraUi.hideMessage(elements.messageBox);
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -540,78 +549,6 @@ function sanitizeSequenceValue(value) {
   if (!/^\d{1,3}$/.test(sequence)) return "";
   return sequence.padStart(3, "0");
 }
-
-async function apiGet(path) {
-  const response = await fetch(path, {
-    headers: Auth.authHeaders()
-  });
-  return parseResponse(response);
-}
-
-async function apiPost(path, body, signal) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      ...Auth.authHeaders(),
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body),
-    signal
-  });
-  return parseResponse(response);
-}
-
-async function parseResponse(response) {
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.message || (data.errors && data.errors.join(" ")) || "Request failed.");
-  }
-  return data;
-}
-
-function showMessage(message, type) {
-  elements.messageBox.textContent = message;
-  elements.messageBox.className = `message-box ${type}`;
-}
-
-function hideMessage() {
-  elements.messageBox.className = "message-box hidden";
-  elements.messageBox.textContent = "";
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("tr-TR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-function normalizeDisplayText(value) {
-  return String(value ?? "")
-    .replaceAll("İ", "I")
-    .replaceAll("ı", "i")
-    .replaceAll("Ğ", "G")
-    .replaceAll("ğ", "g")
-    .replaceAll("Ü", "U")
-    .replaceAll("ü", "u")
-    .replaceAll("Ş", "S")
-    .replaceAll("ş", "s")
-    .replaceAll("Ö", "O")
-    .replaceAll("ö", "o")
-    .replaceAll("Ç", "C")
-    .replaceAll("ç", "c");
-}
-
 function uniqueSorted(values) {
   return [...new Set(values
     .map(value => normalizeDisplayText(value).trim())
@@ -635,13 +572,4 @@ function normalizeDisplayText(value) {
     .replaceAll("\u00e7", "c")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

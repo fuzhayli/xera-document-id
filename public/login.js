@@ -2,6 +2,7 @@ const elements = {
   form: document.getElementById("loginForm"),
   email: document.getElementById("email"),
   password: document.getElementById("password"),
+  remember: document.getElementById("rememberSession"),
   messageBox: document.getElementById("messageBox"),
   signupDivider: document.getElementById("signupDivider"),
   signupLink: document.getElementById("signupLink")
@@ -41,7 +42,7 @@ async function login(event) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Login failed.");
-    Auth.setSession(data.token);
+    Auth.setSession(data.token, elements.remember.checked);
     window.location.href = nextUrl;
   } catch (error) {
     showMessage(error.message, "error");

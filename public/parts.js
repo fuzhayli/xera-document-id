@@ -10,7 +10,15 @@ const state = {
   customExportSelectedIds: new Set()
 };
 
-const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
+const API_BASE = window.XeraUi.apiBase;
+const {
+  apiGet,
+  apiPost,
+  escapeHtml,
+  normalizeSearch,
+  getActiveSearchFields,
+  matchesScopedSearch
+} = window.XeraUi;
 
 const PROJECT_NAME_BY_CODE = {
   X101: "GR10X",
@@ -130,6 +138,8 @@ const elements = {
   materialSortButtons: document.querySelectorAll("[data-material-sort]"),
   hardwareSortButtons: document.querySelectorAll("[data-hardware-sort]")
 };
+const showMessage = (message, type) => window.XeraUi.showMessage(elements.messageBox, message, type);
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -274,18 +284,6 @@ async function handleImportUpload(e) {
     elements.importFileInput.value = "";
   }
 }
-
-function showMessage(text, type) {
-  elements.messageBox.className = "message-box";
-  if (type === "hidden" || !text) {
-    elements.messageBox.classList.add("hidden");
-    return;
-  }
-  elements.messageBox.classList.add(type);
-  elements.messageBox.textContent = text;
-  elements.messageBox.classList.remove("hidden");
-}
-
 async function loadData() {
   elements.partsState.textContent = "Loading";
 
@@ -806,21 +804,6 @@ function clearHardwareFilters() {
   window.XeraSearchScopes?.clear(HARDWARE_SEARCH_SCOPE_ID);
   renderHardware();
 }
-
-function getActiveSearchFields(scopeId, searchFieldMap) {
-  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
-  const validSelected = selected.filter(field => searchFieldMap[field]);
-  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
-}
-
-function matchesScopedSearch(record, search, searchFields, searchFieldMap) {
-  return searchFields.some(field => normalizeSearch(flattenSearchValue(searchFieldMap[field](record))).includes(search));
-}
-
-function flattenSearchValue(value) {
-  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
-}
-
 function getNextSortState(current, field) {
   if (!field) return { field: "", direction: "" };
   if (current.field !== field) return { field, direction: "asc" };
@@ -937,32 +920,6 @@ function sanitizeSequenceValue(value) {
   if (!/^\d{1,3}$/.test(sequence)) return "";
   return sequence.padStart(3, "0");
 }
-
-async function apiGet(path) {
-  const response = await fetch(`${API_BASE}${path}`, { headers: Auth.authHeaders() });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-async function apiPost(path, body) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      ...Auth.authHeaders(),
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
 function uniqueSorted(values) {
   return [...new Set(values.filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "tr"));
@@ -975,11 +932,6 @@ function getProjectName(projectCode) {
 function normalizeProjectCode(projectCode) {
   return String(projectCode || "").trim().toUpperCase();
 }
-
-function normalizeSearch(value) {
-  return String(value || "").toLocaleLowerCase("tr-TR").trim();
-}
-
 function normalizeDisplayText(value) {
   return String(value ?? "")
     .replaceAll("İ", "I")
@@ -1012,13 +964,4 @@ function formatPartName(value) {
         .join("");
     })
     .join("");
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

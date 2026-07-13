@@ -2,6 +2,12 @@ const state = {
   currentUser: null,
   users: []
 };
+const {
+  apiGet,
+  apiPost,
+  escapeHtml,
+  formatDateTime
+} = window.XeraUi;
 
 const elements = {
   apiStatus: document.getElementById("apiStatus"),
@@ -21,6 +27,9 @@ const elements = {
   userCount: document.getElementById("userCount"),
   usersBody: document.getElementById("usersBody")
 };
+const showMessage = (message, type) => window.XeraUi.showMessage(elements.messageBox, message, type);
+const hideMessage = () => window.XeraUi.hideMessage(elements.messageBox);
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -222,65 +231,4 @@ function clearForm() {
 function getCreatePermissions() {
   return [...elements.form.querySelectorAll('input[name="permissions"]:checked')]
     .map(input => input.value);
-}
-
-async function apiGet(path) {
-  const response = await fetch(path, {
-    headers: Auth.authHeaders()
-  });
-  return parseResponse(response);
-}
-
-async function apiPost(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      ...Auth.authHeaders(),
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body)
-  });
-  return parseResponse(response);
-}
-
-async function parseResponse(response) {
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-function showMessage(message, type) {
-  elements.messageBox.textContent = message;
-  elements.messageBox.className = `message-box ${type}`;
-}
-
-function hideMessage() {
-  elements.messageBox.className = "message-box hidden";
-  elements.messageBox.textContent = "";
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("tr-TR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

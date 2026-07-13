@@ -7,13 +7,16 @@ build step so it can run from a NAS/shared machine with a single Node process.
 
 | File | Responsibility |
 |---|---|
-| `server/index.js` | HTTP routes, SQLite/libSQL schema migrations, document numbering rules, auto-publish review notifications, revision approval workflows, auth/session handling and Excel export. |
+| `server/index.js` | HTTP routes, SQLite/libSQL schema setup, document/part workflow transactions, auto-publish review notifications, revision approval workflows and auth/session handling. |
+| `server/rules.js` | Document format rules, part rule metadata and role/permission constants shared by server workflows. |
+| `server/http-utils.js` | Request body parsing, JSON/binary/static responses and HTTP error construction. |
+| `server/workbook.js` | Excel-compatible workbook generation for document, part and custom part exports. |
 
 Important server sections:
 
-- `CATEGORY_RULES`: single source for document number and filename formats.
+- `server/rules.js`: single source for document number, filename, part rule and role constants.
 - Auth helpers: signup, login, session token validation and split admin permission checks.
-- Request helpers: document preview, document ID auto-publish, admin review notification OK/edit and legacy approval endpoints.
+- Request helpers: document preview, document ID auto-publish, admin review notification OK/edit and legacy pending approval endpoints.
 - Revision helpers: revision request creation, admin approval, archive copy and current revision update.
 - Part helpers: Excel seed import, SOP part number preview, reserved sequence allocation, part auto-publish and admin review notification OK/edit.
 - Query helpers: current document list, archive list, managed user list.
@@ -29,9 +32,12 @@ Important server sections:
 | `public/documents.html`, `public/documents.js` | Main landing page, searchable current documents, request modal and revision request button. |
 | `public/part-request.html`, `public/part-request.js` | SOP compliant Part List Request form and user's part request history. |
 | `public/parts.html`, `public/parts.js` | Searchable Parts List seeded from Excel plus Screw & Nut reference tab. |
-| `public/admin.html`, `public/admin.js` | Admin review screen with auto-published record notifications, permission-based sections, revision approvals, official documents, sequences and audit log. |
+| `public/admin.html`, `public/admin.js` | Admin review screen with auto-published record notifications, legacy pending queues, permission-based sections, revision approvals, official documents, sequences and audit log. |
 | `public/users.html`, `public/users.js` | User Permissions Admin management and password reset. |
 | `public/archive.html`, `public/archive.js` | Archived old revisions. |
+| `public/deleted-items.html`, `public/deleted-items.js` | Deleted records and Re-requestable Codes & IDs admin workflow. |
+| `public/released-part-codes.html` | Redirect-only compatibility URL for the Re-requestable Codes & IDs view. |
+| `public/ui.js` | Shared app chrome plus `window.XeraUi` API, formatting, escaping, status and scoped-search helpers for protected pages. |
 | `public/styles.css` | Shared layout and UI styling. |
 
 ## Edit Notes

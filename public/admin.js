@@ -10,6 +10,12 @@ const CATEGORY_LABELS = {
   MARKETING: "MARKETING (Marketing Material ID)"
 };
 const REVISION_CATEGORIES = ["D", "MD", "EC", "QMS", "SOP"];
+const {
+  apiGet,
+  apiPost,
+  escapeHtml,
+  formatDateTime
+} = window.XeraUi;
 const state = {
   currentUser: null,
   notifications: [],
@@ -28,6 +34,9 @@ const elements = {
   auditCount: document.getElementById("auditCount"),
   notificationCount: document.getElementById("notificationCount"),
   notificationBody: document.getElementById("notificationBody"),
+  legacyPendingSection: document.getElementById("legacyPendingSection"),
+  legacyPendingCount: document.getElementById("legacyPendingCount"),
+  legacyPendingBody: document.getElementById("legacyPendingBody"),
   partRevisionPendingCount: document.getElementById("partRevisionPendingCount"),
   partRevisionPendingBody: document.getElementById("partRevisionPendingBody"),
   revisionPendingCount: document.getElementById("revisionPendingCount"),
@@ -63,6 +72,9 @@ const elements = {
   notificationEditCancelBtn: document.getElementById("notificationEditCancelBtn"),
   notificationEditSaveBtn: document.getElementById("notificationEditSaveBtn")
 };
+const showMessage = (message, type) => window.XeraUi.showMessage(elements.messageBox, message, type);
+const hideMessage = () => window.XeraUi.hideMessage(elements.messageBox);
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -84,6 +96,7 @@ async function init() {
   applyAdminAccess();
   elements.refreshBtn.addEventListener("click", refreshAll);
   elements.notificationBody.addEventListener("click", handleNotificationAction);
+  elements.legacyPendingBody.addEventListener("click", handleLegacyPendingAction);
   elements.partRevisionPendingBody.addEventListener("click", handlePartRevisionPendingAction);
   elements.revisionPendingBody.addEventListener("click", handleRevisionPendingAction);
   elements.documentsBody.addEventListener("click", handleDocumentAction);
@@ -103,6 +116,7 @@ function applyAdminAccess() {
   elements.revisionPendingSection.classList.toggle("hidden", !canManageDocuments);
   elements.approvedDocumentsSection.classList.toggle("hidden", !canManageDocuments);
   elements.notificationSection.classList.toggle("hidden", !(canManageDocuments || canManageParts));
+  elements.legacyPendingSection.classList.toggle("hidden", !(canManageDocuments || canManageParts));
   elements.partRevisionPendingSection.classList.toggle("hidden", !canManageParts);
 }
 
@@ -116,6 +130,8 @@ async function refreshAll() {
     const data = {
       partRevisionPending: { revision_requests: [] },
       revisionPending: { revision_requests: [] },
+      legacyDocumentPending: { requests: [] },
+      legacyPartPending: { requests: [] },
       notifications: { notifications: [] },
       documents: { documents: [] },
       sequences: { sequences: [] },
@@ -128,6 +144,7 @@ async function refreshAll() {
     if (canManageDocuments) {
       requests.push(
         apiGet("/api/admin/revision-requests/pending").then(result => { data.revisionPending = result; }),
+        apiGet("/api/admin/requests/pending").then(result => { data.legacyDocumentPending = result; }),
         apiGet("/api/documents").then(result => { data.documents = result; }),
         apiGet("/api/admin/sequences").then(result => { data.sequences = result; })
       );
@@ -135,6 +152,7 @@ async function refreshAll() {
 
     if (canManageParts) {
       requests.push(
+        apiGet("/api/admin/parts/requests/pending").then(result => { data.legacyPartPending = result; }),
         apiGet("/api/admin/parts/revision-requests/pending").then(result => { data.partRevisionPending = result; })
       );
     }
@@ -149,15 +167,20 @@ async function refreshAll() {
 
     const partRevisionRows = data.partRevisionPending.revision_requests || [];
     const revisionRows = data.revisionPending.revision_requests || [];
+    const legacyPendingRows = [
+      ...(data.legacyDocumentPending.requests || []).map(request => ({ ...request, legacyType: "document" })),
+      ...(data.legacyPartPending.requests || []).map(request => ({ ...request, legacyType: "part" }))
+    ];
     const notificationRows = data.notifications.notifications || [];
 
     renderNotifications(notificationRows);
+    renderLegacyPending(legacyPendingRows);
     renderPartRevisionPending(partRevisionRows);
     renderRevisionPending(revisionRows);
     renderDocuments(data.documents.documents || []);
     renderSequences(data.sequences.sequences || []);
     renderAudit(data.audit.audit_logs || []);
-    elements.pendingCount.textContent = notificationRows.length + partRevisionRows.length + revisionRows.length;
+    elements.pendingCount.textContent = notificationRows.length + legacyPendingRows.length + partRevisionRows.length + revisionRows.length;
     setApiStatus(true);
     elements.adminState.textContent = "Ready";
   } catch (error) {
@@ -203,6 +226,44 @@ async function handleNotificationAction(event) {
       }
       const result = await apiPost(`/api/admin/notifications/${notificationId}/reject`, { reason });
       showMessage(`${getNotificationItemLabel(notification, result)} rejected.`, "success");
+    }
+
+    await refreshAll();
+  } catch (error) {
+    showMessage(error.message, "error");
+    button.disabled = false;
+  }
+}
+
+async function handleLegacyPendingAction(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+
+  const requestId = Number(button.dataset.id);
+  const type = button.dataset.type;
+  const action = button.dataset.action;
+  const isPart = type === "part";
+  const label = isPart ? "part request" : "document request";
+  const basePath = isPart
+    ? `/api/admin/parts/requests/${requestId}`
+    : `/api/admin/requests/${requestId}`;
+
+  button.disabled = true;
+  try {
+    if (action === "approve-legacy") {
+      const result = await apiPost(`${basePath}/approve`, {});
+      const itemLabel = result.part?.part_number || result.document?.document_no || `#${requestId}`;
+      showMessage(`Legacy ${label} approved: ${itemLabel}.`, "success");
+    }
+
+    if (action === "reject-legacy") {
+      const reason = window.prompt(`Reject legacy ${label} #${requestId}. Optional reason:`, "");
+      if (reason === null) {
+        button.disabled = false;
+        return;
+      }
+      await apiPost(`${basePath}/reject`, { reason });
+      showMessage(`Legacy ${label} #${requestId} rejected.`, "success");
     }
 
     await refreshAll();
@@ -348,6 +409,38 @@ function renderNotifications(notifications) {
         <td>${escapeHtml(notification.body || "-")}</td>
         <td>${escapeHtml(notification.source_name || metadata.created_by || "-")}</td>
         <td>${formatDateTime(notification.created_at)}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderLegacyPending(requests) {
+  elements.legacyPendingCount.textContent = `${requests.length} requests`;
+  if (requests.length === 0) {
+    elements.legacyPendingBody.innerHTML = '<tr><td colspan="6" class="empty-cell">No legacy pending requests</td></tr>';
+    return;
+  }
+
+  elements.legacyPendingBody.innerHTML = requests.map(request => {
+    const isPart = request.legacyType === "part";
+    const typeLabel = isPart ? "Part" : "Document";
+    const item = isPart
+      ? request.part_number
+      : (request.document_no || request.generated_filename || `#${request.id}`);
+    const name = isPart ? request.part_name : request.document_name;
+    return `
+      <tr>
+        <td>
+          <div class="action-row">
+            <button class="compact-btn approve-btn" type="button" data-action="approve-legacy" data-type="${request.legacyType}" data-id="${request.id}">Approve</button>
+            <button class="compact-btn reject-btn" type="button" data-action="reject-legacy" data-type="${request.legacyType}" data-id="${request.id}">Reject</button>
+          </div>
+        </td>
+        <td>${escapeHtml(typeLabel)}</td>
+        <td class="mono-cell">${escapeHtml(item || "-")}</td>
+        <td>${escapeHtml(name || "-")}</td>
+        <td>${escapeHtml(request.requested_by || "-")}</td>
+        <td>${formatDateTime(request.created_at)}</td>
       </tr>
     `;
   }).join("");
@@ -643,61 +736,6 @@ function getNotificationItemLabel(notification, result = null) {
 function canEditNotificationReference(category) {
   return ["D", "R", "MD", "MR", "EC"].includes(category);
 }
-
-async function apiGet(path) {
-  const response = await fetch(path, {
-    headers: Auth.authHeaders()
-  });
-  return parseResponse(response);
-}
-
-async function apiPost(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      ...Auth.authHeaders(),
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body)
-  });
-  return parseResponse(response);
-}
-
-async function parseResponse(response) {
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.message || "Request failed.");
-  }
-  return data;
-}
-
-function showMessage(message, type) {
-  elements.messageBox.textContent = message;
-  elements.messageBox.className = `message-box ${type}`;
-}
-
-function hideMessage() {
-  elements.messageBox.className = "message-box hidden";
-  elements.messageBox.textContent = "";
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
-function formatDateTime(value) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("tr-TR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
 function formatDocumentCategory(documentRecord) {
   if (String(documentRecord.document_no || "").startsWith("XQT-")) return CATEGORY_LABELS.TEMPLATE || "TEMPLATE";
   return CATEGORY_LABELS[documentRecord.category] || documentRecord.category || "-";
@@ -705,13 +743,4 @@ function formatDocumentCategory(documentRecord) {
 
 function formatCategory(category) {
   return CATEGORY_LABELS[category] || category || "-";
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

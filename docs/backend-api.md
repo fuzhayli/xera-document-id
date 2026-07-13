@@ -265,7 +265,10 @@ part icin part name, description, main category ve sub category desteklenir.
 ### `GET /api/admin/requests/pending`
 
 Legacy/manual pending document requestlerini dondurur. Normal yeni document
-request akisi bu kuyruga satir birakmaz.
+request akisi bu kuyruga satir birakmaz. Admin Review ekranindaki
+`Legacy Pending Requests` tablosu bu endpoint'i `document_admin` yetkisiyle
+okur; ayni tablo approve/reject islemlerini asagidaki legacy endpointlere
+gonderir.
 
 ```powershell
 Invoke-RestMethod `
@@ -415,7 +418,8 @@ Current Parts List kayitlarini Excel uyumlu `.xlsx` dosyasi olarak indirir.
 ### `GET /api/admin/parts/requests/pending`
 
 Legacy/manual pending part request listesini dondurur. Normal yeni part
-request akisi bu kuyruga satir birakmaz.
+request akisi bu kuyruga satir birakmaz. Admin Review ekranindaki
+`Legacy Pending Requests` tablosu bu endpoint'i `part_admin` yetkisiyle okur.
 
 ### `POST /api/admin/parts/requests/{id}/approve`
 

@@ -13,8 +13,6 @@
     "import:document-number-list": "node --no-warnings scripts/import-document-number-list-r00.js",
     "import:additional-record-documents": "node --no-warnings scripts/import-additional-record-documents.js",
     "import:qms-procedure-documents": "node --no-warnings scripts/import-qms-procedure-documents.js",
-    "patch:template-ui": "node --no-warnings scripts/apply-template-ui-patch.js",
-    "patch:record-template-name": "node --no-warnings scripts/apply-record-template-name-patch.js",
     "cleanup:xqs-1501-1877-archive": "node --no-warnings scripts/remove-xqs-1501-1877-archive-revisions.js"
   },
   "engines": {

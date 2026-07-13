@@ -12,7 +12,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: DISABLE_PUBLIC_SIGNUP
-        value: "false"
+        value: "true"
       - key: APP_TIME_ZONE
         value: Europe/Istanbul
       - key: INITIAL_ADMIN_PASSWORD

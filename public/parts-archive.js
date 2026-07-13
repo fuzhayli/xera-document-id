@@ -2,7 +2,13 @@ const state = {
   archive: []
 };
 
-const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
+const {
+  apiGet,
+  escapeHtml,
+  normalizeSearch,
+  getActiveSearchFields,
+  matchesScopedSearch
+} = window.XeraUi;
 const PART_ARCHIVE_SEARCH_SCOPE_ID = "partArchiveSearchScope";
 const PART_ARCHIVE_SEARCH_FIELDS = {
   archived_part_number: record => record.part_number,
@@ -26,6 +32,7 @@ const elements = {
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
   archiveBody: document.getElementById("archiveBody")
 };
+const setApiStatus = isOnline => window.XeraUi.setApiStatus(elements.apiStatus, isOnline);
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -105,7 +112,7 @@ function getFilteredArchive() {
     if (project && record.project_code !== project) return false;
     if (main && record.main_category !== main) return false;
     if (!search) return true;
-    return matchesScopedSearch(record, search, searchFields);
+    return matchesScopedSearch(record, search, searchFields, PART_ARCHIVE_SEARCH_FIELDS);
   });
 }
 
@@ -116,46 +123,7 @@ function clearFilters() {
   window.XeraSearchScopes?.clear(PART_ARCHIVE_SEARCH_SCOPE_ID);
   renderArchive();
 }
-
-function getActiveSearchFields(scopeId, searchFieldMap) {
-  const selected = window.XeraSearchScopes?.getSelected(scopeId) || [];
-  const validSelected = selected.filter(field => searchFieldMap[field]);
-  return validSelected.length ? validSelected : Object.keys(searchFieldMap);
-}
-
-function matchesScopedSearch(record, search, searchFields) {
-  return searchFields.some(field => normalizeSearch(flattenSearchValue(PART_ARCHIVE_SEARCH_FIELDS[field](record))).includes(search));
-}
-
-function flattenSearchValue(value) {
-  return Array.isArray(value) ? value.filter(Boolean).join(" ") : value;
-}
-
-async function apiGet(path) {
-  const response = await fetch(`${API_BASE}${path}`, { headers: Auth.authHeaders() });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || "Request failed.");
-  return data;
-}
-
-function setApiStatus(isOnline) {
-  elements.apiStatus.className = `status-dot ${isOnline ? "status-ok" : "status-muted"}`;
-}
-
 function uniqueSorted(values) {
   return [...new Set(values.filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "tr"));
-}
-
-function normalizeSearch(value) {
-  return String(value || "").toLocaleLowerCase("tr-TR").trim();
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
