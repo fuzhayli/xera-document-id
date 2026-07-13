@@ -8,6 +8,12 @@ const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY"
 };
+const EMBEDDABLE_STATIC_PATHS = new Set(["/index.html", "/part-request.html"]);
+const SAME_ORIGIN_FRAME_HEADERS = {
+  ...SECURITY_HEADERS,
+  "content-security-policy": "base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'",
+  "x-frame-options": "SAMEORIGIN"
+};
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -100,8 +106,11 @@ function serveStatic(res, requestPath, publicDir) {
 
   const contentType = getContentType(absolutePath);
   const body = fs.readFileSync(absolutePath);
+  const securityHeaders = EMBEDDABLE_STATIC_PATHS.has(normalizedPath)
+    ? SAME_ORIGIN_FRAME_HEADERS
+    : SECURITY_HEADERS;
   res.writeHead(200, {
-    ...SECURITY_HEADERS,
+    ...securityHeaders,
     // Static filenames are not content-hashed, so every navigation must
     // revalidate them or a deployment can leave users on stale CSS/JS.
     "cache-control": contentType.startsWith("text/html") ? "no-store" : "no-cache",

@@ -48,6 +48,14 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     assert.equal(loginPage.status, 200);
     assert.equal(loginPage.headers.get("cache-control"), "no-store");
     assert.match(loginPage.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+    assert.equal(loginPage.headers.get("x-frame-options"), "DENY");
+
+    for (const endpoint of ["/?embed=request&view=new", "/part-request.html?embed=part-request"]) {
+      const embeddedRequestPage = await fetch(`http://127.0.0.1:${port}${endpoint}`);
+      assert.equal(embeddedRequestPage.status, 200);
+      assert.match(embeddedRequestPage.headers.get("content-security-policy"), /frame-ancestors 'self'/);
+      assert.equal(embeddedRequestPage.headers.get("x-frame-options"), "SAMEORIGIN");
+    }
 
     for (const [method, endpoint] of [
       ["GET", "/api/documents"],
