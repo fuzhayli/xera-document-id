@@ -15,7 +15,10 @@ const {
   serveStatic,
   httpError
 } = require("./http-utils");
-const { ensurePendingDocumentRevisionConstraint } = require("./migrations");
+const {
+  ensurePendingDocumentRevisionConstraint,
+  applyGr10xSheetMetalDescriptionCorrections
+} = require("./migrations");
 const {
   CATEGORY_RULES,
   REVISION_CATEGORY_CODES,
@@ -1053,6 +1056,7 @@ async function initializeDatabase() {
   }
 
   await seedPartsFromWorkbook();
+  await applyGr10xSheetMetalDescriptionCorrections(db, now);
 }
 
 async function ensureColumn(tableName, columnName, definition) {
