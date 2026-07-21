@@ -50,6 +50,29 @@ const GR10X_SHEET_METAL_DESCRIPTION_CORRECTIONS = Object.freeze([
 ]);
 
 async function applyGr10xSheetMetalDescriptionCorrections(db, now) {
+  return await applyPartDescriptionCorrections(
+    db,
+    now,
+    GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID,
+    GR10X_SHEET_METAL_DESCRIPTION_CORRECTIONS
+  );
+}
+
+const BT_MAIN_FRAME_3MM_DESCRIPTION_MIGRATION_ID = "2026-07-21-bt-main-frame-3mm-description-v2";
+const BT_MAIN_FRAME_3MM_DESCRIPTION_CORRECTIONS = Object.freeze([
+  ["1501-1209-03A", "DD11(StW22) (HRP) 3.0mm, RAL7035 texture (Gri)"]
+]);
+
+async function applyBtMainFrame3mmDescriptionCorrection(db, now) {
+  return await applyPartDescriptionCorrections(
+    db,
+    now,
+    BT_MAIN_FRAME_3MM_DESCRIPTION_MIGRATION_ID,
+    BT_MAIN_FRAME_3MM_DESCRIPTION_CORRECTIONS
+  );
+}
+
+async function applyPartDescriptionCorrections(db, now, migrationId, corrections) {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS app_migrations (
       migration_id TEXT PRIMARY KEY,
@@ -62,7 +85,7 @@ async function applyGr10xSheetMetalDescriptionCorrections(db, now) {
     const claim = await db.prepare(`
       INSERT OR IGNORE INTO app_migrations (migration_id, applied_at, details_json)
       VALUES (?, ?, '{}')
-    `).run(GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID, now);
+    `).run(migrationId, now);
     if (Number(claim.changes || 0) === 0) {
       return { applied: false, updatedParts: 0, updatedRequests: 0 };
     }
@@ -71,7 +94,7 @@ async function applyGr10xSheetMetalDescriptionCorrections(db, now) {
     let updatedParts = 0;
     let updatedRequests = 0;
 
-    for (const [partNumber, description] of GR10X_SHEET_METAL_DESCRIPTION_CORRECTIONS) {
+    for (const [partNumber, description] of corrections) {
       const records = await db.prepare(`
         SELECT *
         FROM part_records
@@ -114,12 +137,12 @@ async function applyGr10xSheetMetalDescriptionCorrections(db, now) {
     }
 
     const details = {
-      correctionCount: GR10X_SHEET_METAL_DESCRIPTION_CORRECTIONS.length,
+      correctionCount: corrections.length,
       updatedParts,
       updatedRequests
     };
     await db.prepare("UPDATE app_migrations SET details_json = ? WHERE migration_id = ?")
-      .run(JSON.stringify(details), GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID);
+      .run(JSON.stringify(details), migrationId);
     return { applied: true, ...details };
   });
 }
@@ -145,6 +168,9 @@ function updatePayloadDescription(payloadJson, description) {
 module.exports = {
   ensurePendingDocumentRevisionConstraint,
   applyGr10xSheetMetalDescriptionCorrections,
+  applyBtMainFrame3mmDescriptionCorrection,
   GR10X_SHEET_METAL_DESCRIPTION_CORRECTIONS,
-  GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID
+  GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID,
+  BT_MAIN_FRAME_3MM_DESCRIPTION_CORRECTIONS,
+  BT_MAIN_FRAME_3MM_DESCRIPTION_MIGRATION_ID
 };

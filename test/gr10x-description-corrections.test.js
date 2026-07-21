@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 const { createDatabase } = require("../server/db");
 const {
   applyGr10xSheetMetalDescriptionCorrections,
-  GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID
+  applyBtMainFrame3mmDescriptionCorrection,
+  GR10X_SHEET_METAL_DESCRIPTION_MIGRATION_ID,
+  BT_MAIN_FRAME_3MM_DESCRIPTION_MIGRATION_ID
 } = require("../server/migrations");
 
 function temporaryDatabase() {
@@ -83,6 +85,32 @@ test("GR10X sheet metal description migration is complete, consistent and idempo
     const second = await applyGr10xSheetMetalDescriptionCorrections(db, "2026-07-21T12:05:00.000Z");
     assert.deepEqual(second, { applied: false, updatedParts: 0, updatedRequests: 0 });
     assert.equal(Number((await db.prepare("SELECT COUNT(*) AS count FROM audit_logs").get()).count), 2);
+
+    await db.prepare(`
+      INSERT INTO part_records (id, request_id, part_number, part_name, description, deleted_at)
+      VALUES (22, NULL, '1501-1209-03A', 'BT_MAIN_FRAME', 'DD11(StW22) (HRP) 1.5mm / 3.0mm / 4.0mm, RAL7035 texture (Gri)', NULL)
+    `).run();
+    const btMainFrame = await applyBtMainFrame3mmDescriptionCorrection(db, "2026-07-21T12:10:00.000Z");
+    assert.deepEqual(btMainFrame, {
+      applied: true,
+      correctionCount: 1,
+      updatedParts: 1,
+      updatedRequests: 0
+    });
+    const correctedFrame = await db.prepare("SELECT description FROM part_records WHERE id = 22").get();
+    assert.equal(correctedFrame.description, "DD11(StW22) (HRP) 3.0mm, RAL7035 texture (Gri)");
+    const frameMigration = await db.prepare("SELECT details_json FROM app_migrations WHERE migration_id = ?")
+      .get(BT_MAIN_FRAME_3MM_DESCRIPTION_MIGRATION_ID);
+    assert.deepEqual(JSON.parse(frameMigration.details_json), {
+      correctionCount: 1,
+      updatedParts: 1,
+      updatedRequests: 0
+    });
+    assert.equal(Number((await db.prepare("SELECT COUNT(*) AS count FROM audit_logs").get()).count), 3);
+
+    const repeatedFrame = await applyBtMainFrame3mmDescriptionCorrection(db, "2026-07-21T12:15:00.000Z");
+    assert.deepEqual(repeatedFrame, { applied: false, updatedParts: 0, updatedRequests: 0 });
+    assert.equal(Number((await db.prepare("SELECT COUNT(*) AS count FROM audit_logs").get()).count), 3);
   } finally {
     await db.close();
   }
