@@ -1285,7 +1285,7 @@ function renderRequests(requests) {
   elements.clearRequestFilterBtn.classList.toggle("hidden", state.requestFilter === "all");
 
   if (filteredRequests.length === 0) {
-    elements.requestsBody.innerHTML = '<tr><td colspan="7" class="empty-cell">No records</td></tr>';
+    elements.requestsBody.innerHTML = '<tr><td colspan="8" class="empty-cell">No records</td></tr>';
     return;
   }
 
@@ -1296,6 +1296,7 @@ function renderRequests(requests) {
         <td><span class="status-pill status-${escapeHtml(request.status)}">${escapeHtml(request.status)}</span></td>
         <td>${escapeHtml(formatRequestCategory(request))}</td>
         <td>${escapeHtml(docNo)}</td>
+        <td>${escapeHtml(request.generated_filename || "-")}</td>
         <td>${escapeHtml(request.document_name)}</td>
         <td>${escapeHtml(request.reference_value || "-")}</td>
         <td>${escapeHtml(request.creation_date)}</td>

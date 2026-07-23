@@ -65,3 +65,14 @@ test("protected pages use shared XeraUi helpers instead of local duplicates", ()
     assert.doesNotMatch(source, sharedHelperPattern, `${script} should use public/ui.js shared helpers`);
   }
 });
+
+test("My Requests table renders generated filenames", () => {
+  const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+  const source = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+  const renderRequests = source.match(/function renderRequests\(requests\) \{[\s\S]*?(?=\nfunction formatRequestCategory)/)?.[0] || "";
+
+  assert.match(html, /<th>Filename<\/th>/);
+  assert.match(html, /<td colspan="8" class="empty-cell">No records<\/td>/);
+  assert.match(renderRequests, /request\.generated_filename \|\| "-"/);
+  assert.match(renderRequests, /colspan="8"/);
+});
