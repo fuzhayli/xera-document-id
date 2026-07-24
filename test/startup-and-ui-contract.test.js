@@ -76,3 +76,18 @@ test("My Requests table renders generated filenames", () => {
   assert.match(renderRequests, /request\.generated_filename \|\| "-"/);
   assert.match(renderRequests, /colspan="8"/);
 });
+
+test("ECR request UI separates new and existing workflows and locks derived fields", () => {
+  const html = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+  const source = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
+
+  assert.match(html, /id="ecWorkflow"/);
+  assert.match(html, /Open new ECR/);
+  assert.match(html, /Advance existing ECR/);
+  assert.match(html, /id="ecExisting"/);
+  assert.match(source, /api\/ec\/workflow-options/);
+  assert.match(source, /elements\.extraType\.disabled = true/);
+  assert.match(source, /elements\.extraCode\.readOnly = true/);
+  assert.match(source, /ec_workflow:/);
+  assert.match(source, /ec_base_document_no:/);
+});

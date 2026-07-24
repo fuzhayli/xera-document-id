@@ -51,8 +51,8 @@ const state = {
   previewValid: false,
   previewController: null,
   documentNoTouched: false,
-  ecOrderDocumentNames: [],
-  ecOrderDocumentNamesLoaded: false,
+  ecWorkflowOptions: null,
+  ecWorkflowOptionsLoaded: false,
   autoFilledEcDocumentName: false,
   autoFilledSopDocumentName: false,
   recordTemplateDocumentNames: [],
@@ -101,6 +101,10 @@ const elements = {
   referenceLabel: document.getElementById("referenceLabel"),
   referenceValue: document.getElementById("referenceValue"),
   referenceOptions: document.getElementById("referenceOptions"),
+  ecWorkflowFields: document.getElementById("ecWorkflowFields"),
+  ecWorkflow: document.getElementById("ecWorkflow"),
+  ecExistingField: document.getElementById("ecExistingField"),
+  ecExisting: document.getElementById("ecExisting"),
   extraFields: document.getElementById("extraFields"),
   extraTypeField: document.getElementById("extraTypeField"),
   extraTypeLabel: document.getElementById("extraTypeLabel"),
@@ -303,10 +307,6 @@ function bindEvents() {
       state.autoFilledSopDocumentName = false;
       state.autoFilledRecordTemplateDocumentName = false;
     }
-    if (event.target === elements.extraCode && state.selectedCategory === "EC") {
-      normalizeEcOrderInput();
-      applyEcOrderDocumentName({ force: true });
-    }
     if (event.target === elements.referenceValue) {
       applySopIncomingDocumentName();
     }
@@ -322,14 +322,10 @@ function bindEvents() {
     if (event.target === elements.documentNameTemplate) {
       syncRecordTemplateSelectionToDocumentName({ force: true });
     }
+    if (state.selectedCategory === "EC" && [elements.ecWorkflow, elements.ecExisting].includes(event.target)) {
+      syncEcWorkflowFields({ force: true });
+    }
     applyTemplateDependentFields();
-    if (state.selectedCategory === "EC" && event.target === elements.extraCode) {
-      normalizeEcOrderInput();
-      applyEcOrderDocumentName({ force: true });
-    }
-    if (state.selectedCategory === "EC" && event.target === elements.extraType) {
-      applyEcOrderDocumentName({ force: true });
-    }
     if (state.selectedCategory === "SOP" && event.target === elements.extraType) {
       applySopIncomingDocumentName({ force: true });
     }
@@ -521,9 +517,20 @@ function applyCategoryDefaults() {
   applyExtraFieldRules(formRule);
 
   if (category.code === "EC") {
-    loadEcOrderDocumentNames().then(() => {
+    elements.ecWorkflowFields.classList.remove("hidden");
+    elements.extraType.disabled = true;
+    elements.extraCode.readOnly = true;
+    elements.extraTypeField.classList.add("locked-field");
+    elements.extraCodeField.classList.add("locked-field");
+    if (!elements.ecWorkflow.value) elements.ecWorkflow.value = "new";
+    syncEcWorkflowFields();
+    loadEcWorkflowOptions({ force: true }).then(() => {
       if (state.selectedCategory !== "EC") return;
-      if (applyEcOrderDocumentName()) updatePreview();
+      syncEcWorkflowFields({ force: true });
+      updatePreview();
+    }).catch(error => {
+      if (state.selectedCategory !== "EC") return;
+      showMessage(`ECR options could not be loaded. ${error.message}`, "warning");
     });
   }
 
@@ -559,10 +566,16 @@ function applyExtraFieldRules(formRule) {
 
 function hideExtraFields() {
   elements.extraFields.classList.add("hidden");
+  elements.ecWorkflowFields.classList.add("hidden");
+  elements.ecExistingField.classList.add("hidden");
   elements.extraTypeField.classList.add("hidden");
   elements.extraCodeField.classList.add("hidden");
   elements.extraVersionField.classList.add("hidden");
   elements.languageField.classList.add("hidden");
+  elements.extraType.disabled = false;
+  elements.extraCode.readOnly = false;
+  elements.extraTypeField.classList.remove("locked-field");
+  elements.extraCodeField.classList.remove("locked-field");
 }
 
 function showExtraSelect(label, options, selected) {
@@ -628,143 +641,96 @@ function setReferenceTypeLocked(isLocked) {
   elements.referenceType.closest(".field")?.classList.toggle("locked-field", Boolean(isLocked));
 }
 
-async function loadEcOrderDocumentNames() {
-  if (state.ecOrderDocumentNamesLoaded) return;
-
-  const [documentsResult, requestsResult] = await Promise.allSettled([
-    apiGet("/api/documents"),
-    apiGet("/api/requests/my")
-  ]);
-
-  const documents = documentsResult.status === "fulfilled" ? documentsResult.value.documents || [] : [];
-  const requests = requestsResult.status === "fulfilled" ? requestsResult.value.requests || [] : [];
-  state.ecOrderDocumentNames = buildEcOrderDocumentNames(documents, requests);
-  state.ecOrderDocumentNamesLoaded = true;
+async function loadEcWorkflowOptions(options = {}) {
+  if (state.ecWorkflowOptionsLoaded && !options.force) return;
+  state.ecWorkflowOptions = await apiGet("/api/ec/workflow-options");
+  state.ecWorkflowOptionsLoaded = true;
 }
 
-function buildEcOrderDocumentNames(documents, requests) {
-  const entries = [];
+function syncEcWorkflowFields(options = {}) {
+  if (state.selectedCategory !== "EC") return;
 
-  for (const documentRecord of documents) {
-    if (documentRecord.category !== "EC") continue;
-    const meta = parseEcDocumentNo(documentRecord.document_no);
-    if (!meta || !documentRecord.document_name) continue;
-    if (meta.type !== "R" || meta.sequence_no) continue;
-    entries.push({
-      year_yy: documentRecord.year_yy || meta.year_yy,
-      order: meta.order,
-      document_name: documentRecord.document_name,
-      document_no: documentRecord.document_no,
-      sort_at: documentRecord.approved_at || documentRecord.created_at || "",
-      priority: getEcOrderNamePriority(meta, "approved")
-    });
-  }
+  const workflow = elements.ecWorkflow.value || "new";
+  const workflowOptions = state.ecWorkflowOptions;
+  const progressable = workflowOptions
+    ? (workflowOptions.existing || []).filter(option => option.can_advance)
+    : [];
 
-  for (const request of requests) {
-    if (request.category !== "EC" || !["pending", "approved"].includes(request.status)) continue;
-    const payload = parseJsonObject(request.payload_json);
-    const meta = parseEcDocumentNo(request.document_no);
-    if (!meta || meta.type !== "R" || meta.sequence_no) continue;
-    const order = normalizeEcOrderValue(payload.detail_code || request.detail_code || (meta && meta.order));
-    const yearYy = request.year_yy || payload.year_yy || (meta && meta.year_yy);
-    if (!order || !yearYy || !request.document_name) continue;
-    entries.push({
-      year_yy: yearYy,
-      order,
-      document_name: request.document_name,
-      document_no: request.document_no,
-      sort_at: request.created_at || request.updated_at || "",
-      priority: getEcOrderNamePriority(meta, request.status)
-    });
-  }
+  elements.ecWorkflowFields.classList.remove("hidden");
+  elements.ecExistingField.classList.toggle("hidden", workflow !== "existing");
+  elements.extraType.disabled = true;
+  elements.extraCode.readOnly = true;
+  elements.extraCode.removeAttribute("list");
 
-  entries.sort((a, b) => {
-    if (a.priority !== b.priority) return b.priority - a.priority;
-    return String(b.sort_at || "").localeCompare(String(a.sort_at || ""));
-  });
-
-  const byOrderAndYear = new Map();
-  for (const entry of entries) {
-    const key = `${entry.year_yy}:${entry.order}`;
-    if (!byOrderAndYear.has(key)) byOrderAndYear.set(key, entry);
-  }
-  return [...byOrderAndYear.values()];
-}
-
-function parseEcDocumentNo(documentNo) {
-  const match = String(documentNo || "").trim().match(/^XEC-(\d{2})([A-Z])-(Rr|RR|R|E|O|N)(?:-(\d{2,3}))?$/i);
-  if (!match) return null;
-  return {
-    year_yy: match[1],
-    order: match[2].toUpperCase(),
-    type: match[3].toUpperCase() === "RR" ? "Rr" : match[3].toUpperCase(),
-    sequence_no: match[4] || ""
-  };
-}
-
-function getEcOrderNamePriority(meta, status) {
-  let priority = status === "pending" ? 20 : 10;
-  if (meta && meta.type === "R" && !meta.sequence_no) priority += 100;
-  return priority;
-}
-
-function applyEcOrderDocumentName(options = {}) {
-  if (state.selectedCategory !== "EC") return false;
-  const order = normalizeEcOrderInput();
-  if (!order) return false;
-
-  const match = findEcOrderDocumentName(order);
-  const forceBaseName = match && !isEcRTypeSelected();
-  if (match && (forceBaseName || options.force || state.autoFilledEcDocumentName || !elements.documentName.value.trim())) {
-    elements.documentName.value = match.document_name;
-    state.autoFilledEcDocumentName = true;
+  if (!workflowOptions) {
+    elements.ecExisting.disabled = true;
+    elements.ecExisting.innerHTML = '<option value="">Loading existing ECRs...</option>';
+    elements.extraType.value = "R";
+    elements.extraCode.value = "";
     syncDocumentNameVisibility();
-    return true;
+    return;
   }
 
-  if (!match && state.autoFilledEcDocumentName) {
+  renderEcExistingOptions(progressable);
+
+  if (workflow === "new") {
+    elements.extraType.value = "R";
+    elements.extraCode.value = workflowOptions.new_order || "";
+    if (state.autoFilledEcDocumentName) {
+      elements.documentName.value = "";
+      state.autoFilledEcDocumentName = false;
+    }
+    syncDocumentNameVisibility();
+    return;
+  }
+
+  const selected = findSelectedEcWorkflowOption(progressable);
+  if (!selected) {
+    elements.extraType.value = "";
+    elements.extraCode.value = "";
     elements.documentName.value = "";
     state.autoFilledEcDocumentName = false;
     syncDocumentNameVisibility();
-    return true;
+    return;
   }
 
+  elements.extraType.value = selected.next_type;
+  elements.extraCode.value = selected.order;
+  if (options.force || state.autoFilledEcDocumentName || !elements.documentName.value.trim()) {
+    elements.documentName.value = selected.document_name;
+    state.autoFilledEcDocumentName = true;
+  }
   syncDocumentNameVisibility();
-  return false;
 }
 
-function findEcOrderDocumentName(order) {
-  const selectedYear = getSelectedYearYy();
-  const sameYear = state.ecOrderDocumentNames.find(entry => entry.order === order && entry.year_yy === selectedYear);
-  if (sameYear) return sameYear;
-  return state.ecOrderDocumentNames
-    .filter(entry => entry.order === order)
-    .sort((a, b) => String(b.year_yy || "").localeCompare(String(a.year_yy || "")))[0] || null;
-}
-
-function getSelectedYearYy() {
-  const creationDate = syncCreationDate();
-  return creationDate.slice(2, 4);
-}
-
-function normalizeEcOrderInput() {
-  const normalized = normalizeEcOrderValue(elements.extraCode.value) || "";
-  if (elements.extraCode.value !== normalized) elements.extraCode.value = normalized;
-  return normalized;
-}
-
-function normalizeEcOrderValue(value) {
-  const match = String(value || "").trim().toUpperCase().match(/[A-Z]/);
-  return match ? match[0] : "";
-}
-
-function parseJsonObject(value) {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (error) {
-    return {};
+function renderEcExistingOptions(options) {
+  const currentValue = elements.ecExisting.value;
+  if (!options.length) {
+    elements.ecExisting.disabled = true;
+    elements.ecExisting.innerHTML = '<option value="">No ECR is available to advance</option>';
+    return;
   }
+
+  elements.ecExisting.disabled = false;
+  elements.ecExisting.innerHTML = options
+    .map(option => {
+      const currentType = formatEcStageLabel(option.current_type);
+      const nextType = formatEcStageLabel(option.next_type);
+      const label = `${option.base_document_no} — ${option.document_name} (Current: ${currentType} → Next: ${nextType})`;
+      return `<option value="${escapeHtml(option.base_document_no)}">${escapeHtml(label)}</option>`;
+    })
+    .join("");
+  elements.ecExisting.value = options.some(option => option.base_document_no === currentValue)
+    ? currentValue
+    : options[0].base_document_no;
+}
+
+function findSelectedEcWorkflowOption(options = []) {
+  return options.find(option => option.base_document_no === elements.ecExisting.value) || null;
+}
+
+function formatEcStageLabel(value) {
+  return String(value || "").toUpperCase() === "RR" ? "Rr" : String(value || "");
 }
 
 function applyTemplateDependentFields() {
@@ -974,13 +940,8 @@ function isMrIncomingInspectionSelected() {
 
 function isEcDocumentNameLocked() {
   return state.selectedCategory === "EC"
-    && !isEcRTypeSelected()
-    && Boolean(findEcOrderDocumentName(normalizeEcOrderValue(elements.extraCode.value)));
-}
-
-function isEcRTypeSelected() {
-  return state.selectedCategory === "EC"
-    && String(elements.extraType.value || "R").toUpperCase() === "R";
+    && elements.ecWorkflow.value === "existing"
+    && Boolean(elements.ecExisting.value);
 }
 
 function collectFormData() {
@@ -1000,7 +961,11 @@ function collectFormData() {
     detail_type: isTemplate ? "QT" : elements.extraType.value,
     detail_code: elements.extraCode.value,
     detail_version: elements.extraVersion.value,
-    language: elements.language.value
+    language: elements.language.value,
+    ec_workflow: state.selectedCategory === "EC" ? elements.ecWorkflow.value : "",
+    ec_base_document_no: state.selectedCategory === "EC" && elements.ecWorkflow.value === "existing"
+      ? elements.ecExisting.value
+      : ""
   };
 }
 
@@ -1046,7 +1011,7 @@ async function loadPreview() {
 }
 
 function applyPreviewDocumentName(input) {
-  if (state.selectedCategory !== "EC" || isEcRTypeSelected()) return;
+  if (state.selectedCategory !== "EC" || elements.ecWorkflow.value !== "existing") return;
   const documentName = String(input && input.document_name || "").trim();
   if (!documentName) return;
   elements.documentName.value = documentName;
@@ -1357,6 +1322,10 @@ function clearForm(options = {}) {
   state.autoFilledRecordTemplateDocumentName = false;
   if (elements.documentNameSource) elements.documentNameSource.value = "template";
   if (elements.documentNameTemplate) elements.documentNameTemplate.value = "";
+  if (elements.ecWorkflow) elements.ecWorkflow.value = "new";
+  if (elements.ecExisting) elements.ecExisting.value = "";
+  state.ecWorkflowOptions = null;
+  state.ecWorkflowOptionsLoaded = false;
   elements.documentNo.value = "";
   elements.referenceValue.value = "";
   elements.documentName.value = "";

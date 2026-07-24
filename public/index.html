@@ -415,6 +415,23 @@
           </label>
         </div>
 
+        <div class="grid two hidden" id="ecWorkflowFields">
+          <label class="field">
+            <span>ECR Action</span>
+            <select id="ecWorkflow" name="ec_workflow">
+              <option value="new">Open new ECR</option>
+              <option value="existing">Advance existing ECR</option>
+            </select>
+          </label>
+
+          <label class="field hidden" id="ecExistingField">
+            <span>Existing ECR</span>
+            <select id="ecExisting" name="ec_base_document_no">
+              <option value="">Loading existing ECRs...</option>
+            </select>
+          </label>
+        </div>
+
         <div class="grid three hidden" id="extraFields">
           <label class="field hidden" id="extraTypeField">
             <span id="extraTypeLabel">Type</span>
@@ -602,6 +619,6 @@
   <script src="/auth.js"></script>
   <script src="/time.js"></script>
   <script src="/ui.js"></script>
-  <script src="/app.js?v=my-request-filename-20260723"></script>
+  <script src="/app.js?v=ec-workflow-20260724"></script>
 </body>
 </html>

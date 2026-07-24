@@ -365,6 +365,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { documents: await listCurrentDocuments({ includePendingRevision: true }) });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/ec/workflow-options") {
+      await resolveUser(req);
+      return sendJson(res, 200, await getEcWorkflowOptions());
+    }
+
     if (req.method === "GET" && url.pathname === "/api/documents/archive") {
       await resolveUser(req);
       return sendJson(res, 200, { archive: await listRevisionArchive() });
@@ -3139,6 +3144,7 @@ function normalizeRequestInput(body, user = null, options = {}) {
   const referenceValue = category === "EC"
     ? ""
     : sanitizeText(body.reference_value || body.referenceValue || body.product_or_task || "");
+  const ecWorkflow = String(body.ec_workflow || body.ecWorkflow || "").trim().toLowerCase();
   return {
     category,
     company_code: sanitizeCompact(body.company_code || body.companyCode || "X"),
@@ -3154,13 +3160,16 @@ function normalizeRequestInput(body, user = null, options = {}) {
     detail_type: detailType,
     detail_code: detailCode,
     detail_version: detailVersion,
-    language: sanitizeCompact(body.language || "EN")
+    language: sanitizeCompact(body.language || "EN"),
+    ec_workflow: ecWorkflow,
+    ec_base_document_no: sanitizeText(body.ec_base_document_no || body.ecBaseDocumentNo || "")
   };
 }
 
 async function buildPreview(input, options = {}) {
   // Preview is authoritative for numbering: request creation and admin approval
   // both call this before a document number becomes official.
+  await applyEcWorkflowDefaults(input, options);
   await applyEcRDocumentName(input);
   const errors = validateInput(input);
   const rule = CATEGORY_RULES[input.category];
@@ -4490,6 +4499,156 @@ function formatEcType(value) {
 
 function isSequencedEcType(input) {
   return formatEcType(input.detail_type || "R") === "Rr";
+}
+
+const EC_WORKFLOW_STAGES = ["R", "RR", "E", "O", "N"];
+
+async function getEcWorkflowOptions(options = {}) {
+  const yearYy = todayDate().slice(2, 4);
+  const rows = [
+    ...(await db.prepare(`
+      SELECT document_no, document_name, year_yy, approved_at AS sort_at
+      FROM document_records
+      WHERE category = 'EC'
+        AND deleted_at IS NULL
+    `).all()),
+    ...(await db.prepare(`
+      SELECT document_no, document_name, year_yy, created_at AS sort_at
+      FROM document_requests
+      WHERE category = 'EC'
+        AND status = 'pending'
+        AND (? IS NULL OR id <> ?)
+    `).all(options.ignoreRequestId || null, options.ignoreRequestId || null))
+  ];
+
+  const groups = new Map();
+  for (const row of rows) {
+    const parsed = parseEcWorkflowDocumentNo(row.document_no);
+    if (!parsed) continue;
+    const baseDocumentNo = `XEC-${parsed.year_yy}${parsed.order}-R`;
+    if (!groups.has(baseDocumentNo)) {
+      groups.set(baseDocumentNo, {
+        base_document_no: baseDocumentNo,
+        year_yy: parsed.year_yy,
+        order: parsed.order,
+        document_name: "",
+        current_type: "R",
+        current_rank: -1,
+        sort_at: ""
+      });
+    }
+
+    const group = groups.get(baseDocumentNo);
+    const rank = EC_WORKFLOW_STAGES.indexOf(parsed.type);
+    if (rank > group.current_rank) {
+      group.current_rank = rank;
+      group.current_type = parsed.type;
+    }
+    if (parsed.type === "R" && row.document_name) group.document_name = row.document_name;
+    if (String(row.sort_at || "") > group.sort_at) group.sort_at = String(row.sort_at || "");
+  }
+
+  const existing = [...groups.values()]
+    .filter(group => group.current_rank >= 0 && group.document_name)
+    .map(group => {
+      const nextType = EC_WORKFLOW_STAGES[group.current_rank + 1] || null;
+      return {
+        base_document_no: group.base_document_no,
+        year_yy: group.year_yy,
+        order: group.order,
+        document_name: group.document_name,
+        current_type: group.current_type,
+        next_type: nextType,
+        can_advance: Boolean(nextType),
+        sort_at: group.sort_at
+      };
+    })
+    .sort((a, b) => {
+      const yearComparison = String(b.year_yy).localeCompare(String(a.year_yy));
+      if (yearComparison !== 0) return yearComparison;
+      return String(b.order).localeCompare(String(a.order));
+    });
+
+  return {
+    year_yy: yearYy,
+    new_order: await getNextEcOrderForYear(yearYy, options),
+    existing
+  };
+}
+
+async function getNextEcOrderForYear(yearYy, options = {}) {
+  const rows = [
+    ...(await db.prepare(`
+      SELECT document_no
+      FROM document_records
+      WHERE category = 'EC'
+        AND document_no LIKE ?
+        AND instr(document_no, '__REUSE_RELEASED_') = 0
+    `).all(`XEC-${yearYy}%`)),
+    ...(await db.prepare(`
+      SELECT document_no
+      FROM document_requests
+      WHERE category = 'EC'
+        AND status = 'pending'
+        AND document_no LIKE ?
+        AND instr(document_no, '__REUSE_RELEASED_') = 0
+        AND (? IS NULL OR id <> ?)
+    `).all(`XEC-${yearYy}%`, options.ignoreRequestId || null, options.ignoreRequestId || null))
+  ];
+
+  let maxOrderCode = 64;
+  for (const row of rows) {
+    const parsed = parseEcWorkflowDocumentNo(row.document_no);
+    if (!parsed || parsed.year_yy !== yearYy) continue;
+    maxOrderCode = Math.max(maxOrderCode, parsed.order.charCodeAt(0));
+  }
+  return maxOrderCode < 90 ? String.fromCharCode(maxOrderCode + 1) : null;
+}
+
+async function applyEcWorkflowDefaults(input, options = {}) {
+  if (!isEcDocumentInput(input) || !input.ec_workflow) return;
+  if (!["new", "existing"].includes(input.ec_workflow)) {
+    throw httpError(422, "validation_failed", "ECR action must be new or existing.");
+  }
+
+  input.document_no = "";
+  if (input.ec_workflow === "new") {
+    const nextOrder = await getNextEcOrderForYear(input.year_yy, options);
+    if (!nextOrder) {
+      throw httpError(409, "ec_order_exhausted", `No available ECR letter remains for 20${input.year_yy}.`);
+    }
+    input.detail_type = "R";
+    input.detail_code = nextOrder;
+    input.ec_base_document_no = "";
+    return;
+  }
+
+  const workflowOptions = await getEcWorkflowOptions(options);
+  const selected = workflowOptions.existing.find(option =>
+    option.base_document_no === input.ec_base_document_no
+  );
+  if (!selected) {
+    throw httpError(422, "validation_failed", "Select an existing ECR.");
+  }
+  if (!selected.can_advance || !selected.next_type) {
+    throw httpError(422, "validation_failed", `${selected.base_document_no} is already at the final N stage.`);
+  }
+
+  input.year_yy = selected.year_yy;
+  input.detail_code = selected.order;
+  input.detail_type = selected.next_type;
+  input.document_name = selected.document_name;
+}
+
+function parseEcWorkflowDocumentNo(documentNo) {
+  const match = String(documentNo || "").trim().match(/^XEC-(\d{2})([A-Z])-(Rr|R|E|O|N)(?:-(\d{3}))?$/);
+  if (!match) return null;
+  return {
+    year_yy: match[1],
+    order: match[2],
+    type: match[3] === "Rr" ? "RR" : match[3],
+    sequence_no: match[4] || ""
+  };
 }
 
 function isIncomingSop(input) {
