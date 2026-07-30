@@ -26,6 +26,27 @@ test("X106 Mobile System is available across part project rules and filters", ()
   assert.match(archiveHtml, /parts-archive\.js\?v=x106-mobile-system-20260730/);
 });
 
+test("part request preview avoids repeated full-list loads and duplicate server checks", () => {
+  const html = fs.readFileSync(path.join(root, "public", "part-request.html"), "utf8");
+  const clientSource = fs.readFileSync(path.join(root, "public", "part-request.js"), "utf8");
+  const serverSource = fs.readFileSync(path.join(root, "server", "index.js"), "utf8");
+  const nextSequenceFunction = serverSource.match(/async function getNextAvailablePartSequence[\s\S]*?(?=\nfunction getPartSequenceMinimum)/)?.[0] || "";
+
+  assert.match(clientSource, /apiGet\("\/api\/parts\/request-context"\)/);
+  assert.doesNotMatch(clientSource, /apiGet\("\/api\/parts"\)/);
+  assert.match(clientSource, /pendingPreviewSignature/);
+  assert.match(clientSource, /confirmedPreviewSignature/);
+  assert.match(clientSource, /rejectedPreviewSignature/);
+  assert.match(clientSource, /signature === state\.pendingPreviewSignature/);
+  assert.match(clientSource, /signature === state\.confirmedPreviewSignature/);
+  assert.match(clientSource, /signature === state\.rejectedPreviewSignature/);
+  assert.match(serverSource, /WITH conflicts AS/);
+  assert.match(serverSource, /idx_part_records_sequence_lookup/);
+  assert.match(nextSequenceFunction, /listUnavailablePartSequences/);
+  assert.doesNotMatch(nextSequenceFunction, /await isPartSequenceUnavailable/);
+  assert.match(html, /part-request\.js\?v=part-preview-performance-20260730/);
+});
+
 test("normal startup does not run maintenance or source patch scripts", () => {
   const packageJson = require("../package.json");
   assert.equal(packageJson.scripts.start, "node --no-warnings server/index.js");

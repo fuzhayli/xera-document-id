@@ -7,6 +7,11 @@ const state = {
   parts: [],
   previewValid: false,
   previewController: null,
+  pendingPreviewSignature: "",
+  confirmedPreviewSignature: "",
+  rejectedPreviewSignature: "",
+  rejectedPreviewErrors: [],
+  currentPreviewSignature: "",
   partNumberTouched: false,
   requests: []
 };
@@ -82,7 +87,7 @@ async function refreshAll() {
     const [rules, requests, parts] = await Promise.all([
       apiGet("/api/parts/rules"),
       apiGet("/api/parts/requests/my"),
-      apiGet("/api/parts")
+      apiGet("/api/parts/request-context")
     ]);
     state.rules = rules;
     state.requests = requests.requests || [];
@@ -165,25 +170,53 @@ function collectFormData() {
 
 function updatePreview() {
   window.clearTimeout(updatePreview.timer);
-  updatePreview.timer = window.setTimeout(loadPreview, 220);
-}
-
-async function loadPreview() {
-  if (state.previewController) state.previewController.abort();
-  state.previewController = new AbortController();
-
-  elements.previewState.textContent = "Checking";
-  elements.submitBtn.disabled = true;
-  applyLocalPartNumberPreview();
-
-  const duplicatePartName = findDuplicatePartName(elements.partName.value);
-  if (duplicatePartName) {
-    renderPreviewErrors([formatDuplicatePartNameError(duplicatePartName)], { preservePreview: true });
+  const suggestion = applyLocalPartNumberPreview();
+  const localErrors = getLocalPreviewErrors();
+  if (localErrors.length > 0) {
+    renderPreviewErrors(localErrors, { preservePreview: Boolean(suggestion) });
     return;
   }
 
+  const signature = getPreviewCodeSignature();
+  if (state.currentPreviewSignature && signature !== state.currentPreviewSignature) {
+    state.confirmedPreviewSignature = "";
+    state.rejectedPreviewSignature = "";
+    state.rejectedPreviewErrors = [];
+  }
+  state.currentPreviewSignature = signature;
+  if (signature === state.confirmedPreviewSignature) {
+    renderConfirmedPreview();
+    return;
+  }
+  if (signature === state.rejectedPreviewSignature) {
+    renderPreviewErrors(state.rejectedPreviewErrors, { preservePreview: Boolean(suggestion) });
+    return;
+  }
+  if (signature === state.pendingPreviewSignature) {
+    elements.previewState.textContent = "Checking";
+    elements.submitBtn.disabled = true;
+    return;
+  }
+
+  if (state.previewController) state.previewController.abort();
+  state.previewController = null;
+  state.pendingPreviewSignature = "";
+  state.previewValid = false;
+  elements.previewState.textContent = "Checking";
+  elements.submitBtn.disabled = true;
+  updatePreview.timer = window.setTimeout(() => loadPreview(signature), 220);
+}
+
+async function loadPreview(signature) {
+  if (signature !== getPreviewCodeSignature()) return;
+  const controller = new AbortController();
+  state.previewController = controller;
+  state.pendingPreviewSignature = signature;
+
   try {
-    const data = await apiPost("/api/parts/preview", collectFormData(), state.previewController.signal);
+    const data = await apiPost("/api/parts/preview", collectFormData(), controller.signal);
+    if (state.previewController !== controller) return;
+    state.pendingPreviewSignature = "";
     state.previewValid = Boolean(data.valid);
     if (data.valid) {
       if (!state.partNumberTouched || !elements.partNumber.value.trim()) {
@@ -191,16 +224,59 @@ async function loadPreview() {
       }
       elements.partNumberPreview.textContent = data.part_number_preview;
       elements.mainCategoryPreview.textContent = normalizeDisplayText(data.main_category_preview);
-      elements.previewState.textContent = "Valid";
-      elements.submitBtn.disabled = false;
-      hideMessage();
+      const localErrors = getLocalPreviewErrors();
+      if (localErrors.length > 0) {
+        renderPreviewErrors(localErrors, { preservePreview: true });
+        return;
+      }
+      state.confirmedPreviewSignature = getPreviewCodeSignature();
+      state.currentPreviewSignature = state.confirmedPreviewSignature;
+      state.rejectedPreviewSignature = "";
+      state.rejectedPreviewErrors = [];
+      renderConfirmedPreview();
     } else {
-      renderPreviewErrors(data.errors || ["Validation failed."], { preservePreview: true });
+      state.confirmedPreviewSignature = "";
+      state.rejectedPreviewSignature = signature;
+      state.rejectedPreviewErrors = data.errors || ["Validation failed."];
+      renderPreviewErrors(state.rejectedPreviewErrors, { preservePreview: true });
     }
   } catch (error) {
     if (error.name === "AbortError") return;
+    state.pendingPreviewSignature = "";
+    state.confirmedPreviewSignature = "";
+    state.rejectedPreviewSignature = "";
+    state.rejectedPreviewErrors = [];
     renderPreviewErrors([error.message], { preservePreview: true });
+  } finally {
+    if (state.previewController === controller) state.previewController = null;
   }
+}
+
+function getLocalPreviewErrors() {
+  const errors = [];
+  if (!sanitizePartNameValue(elements.partName.value)) errors.push("Part name is required.");
+  if (!elements.description.value.trim()) errors.push("Description is required.");
+  const duplicatePartName = findDuplicatePartName(elements.partName.value);
+  if (duplicatePartName) errors.push(formatDuplicatePartNameError(duplicatePartName));
+  return errors;
+}
+
+function getPreviewCodeSignature() {
+  const data = collectFormData();
+  return [
+    data.project_code,
+    data.main_code,
+    data.part_number,
+    data.revision_mode,
+    data.revision_code
+  ].join("|");
+}
+
+function renderConfirmedPreview() {
+  state.previewValid = true;
+  elements.previewState.textContent = "Valid";
+  elements.submitBtn.disabled = false;
+  hideMessage();
 }
 
 function renderPreviewErrors(errors, options = {}) {
@@ -394,6 +470,15 @@ function closeRequestScreen() {
 }
 
 function clearTextFields() {
+  window.clearTimeout(updatePreview.timer);
+  if (state.previewController) state.previewController.abort();
+  state.previewController = null;
+  state.pendingPreviewSignature = "";
+  state.confirmedPreviewSignature = "";
+  state.rejectedPreviewSignature = "";
+  state.rejectedPreviewErrors = [];
+  state.currentPreviewSignature = "";
+  state.previewValid = false;
   state.partNumberTouched = false;
   elements.partNumber.value = "";
   elements.partName.value = "";

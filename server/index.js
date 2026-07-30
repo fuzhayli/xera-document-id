@@ -165,6 +165,11 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/parts/request-context") {
+      await resolveUser(req);
+      return sendJson(res, 200, { parts: await listPartRequestContext() });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/parts/preview") {
       const user = await resolveUser(req);
       const body = await readJson(req);
@@ -946,10 +951,14 @@ async function initializeDatabase() {
   await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_republished ON deleted_items(republished_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_reuse ON deleted_items(entity_type, released_for_reuse_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_project_main ON part_records(project_code, main_code);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_part_records_sequence_lookup ON part_records(project_code, main_code, sequence_no, deleted_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_project_main ON part_requests(project_code, main_code);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_sequence_status ON part_requests(project_code, main_code, sequence_no, status);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_requests_status ON part_requests(status);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_part_revision_requests_record ON part_revision_requests(part_record_id, status);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_part_revision_requests_number_status ON part_revision_requests(requested_part_number, status);");
   await ensurePendingDocumentRevisionConstraint(db, nowIso());
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_deleted_items_part_key_state ON deleted_items(entity_type, display_key, republished_at, released_for_reuse_at);");
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_part_hardware_unique ON part_standard_hardware_reference(group_name, serial_no, part_name, source_row, source_column);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_notifications_recipient_status ON notifications(recipient_user_id, status, created_at);");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_notifications_entity ON notifications(entity_type, entity_id, status);");
@@ -1528,21 +1537,26 @@ async function buildPartPreview(input, options = {}) {
     partNumber = buildPartNumber(input, sequenceNo);
   }
 
-  const partNumberConflict = await getPartNumberConflict(partNumber, options);
-  if (partNumberConflict) {
+  const conflict = await getPartPreviewConflict(
+    partNumber,
+    input.project_code,
+    input.main_code,
+    sequenceNo,
+    options
+  );
+  if (conflict && conflict.scope === "part_number") {
     return {
       valid: false,
-      errors: [formatPartNumberConflictMessage(partNumber, partNumberConflict)],
+      errors: [formatPartNumberConflictMessage(partNumber, conflict)],
       input,
       part_number_preview: partNumber,
       sequence_no_preview: sequenceNo
     };
   }
-  const sequenceConflict = await getPartSequenceConflict(input.project_code, input.main_code, sequenceNo, options);
-  if (sequenceConflict) {
+  if (conflict) {
     return {
       valid: false,
-      errors: [formatPartSequenceConflictMessage(input.project_code, input.main_code, sequenceNo, sequenceConflict)],
+      errors: [formatPartSequenceConflictMessage(input.project_code, input.main_code, sequenceNo, conflict)],
       input,
       part_number_preview: partNumber,
       sequence_no_preview: sequenceNo
@@ -2347,6 +2361,34 @@ async function listPartRecords(options = {}) {
   return filterCurrentPartRecords(rows);
 }
 
+async function listPartRequestContext() {
+  const rows = await db.prepare(`
+    SELECT
+      id,
+      project_code,
+      main_code,
+      sequence_no,
+      part_number,
+      revision_code,
+      part_name,
+      description,
+      sub_category,
+      deleted_at
+    FROM part_records
+    ORDER BY id ASC
+  `).all();
+
+  return filterCurrentPartRecords(rows).map(row => ({
+    project_code: row.project_code,
+    main_code: row.main_code,
+    sequence_no: row.sequence_no,
+    part_number: row.part_number,
+    part_name: row.part_name,
+    description: row.description,
+    sub_category: row.sub_category
+  }));
+}
+
 async function listCustomExportPartRecords(partIds) {
   const ids = normalizeIdList(partIds);
   if (ids.length === 0) {
@@ -2629,14 +2671,79 @@ async function reserveNextPartSequence(projectCode, mainCode, revisionCode) {
 }
 
 async function getNextAvailablePartSequence(projectCode, mainCode) {
+  const unavailableSequences = await listUnavailablePartSequences(projectCode, mainCode);
   for (let candidate = getPartSequenceMinimum(projectCode, mainCode); candidate <= 999; candidate += 1) {
     const sequenceNo = padSequence(candidate);
-    if (!(await isPartSequenceUnavailable(projectCode, mainCode, sequenceNo))) {
-      return sequenceNo;
-    }
+    if (!unavailableSequences.has(sequenceNo)) return sequenceNo;
   }
 
   throw httpError(409, "part_sequence_exhausted", `No available part sequence remains for ${projectCode}-${mainCode}xxx.`);
+}
+
+async function listUnavailablePartSequences(projectCode, mainCode) {
+  const normalizedProjectCode = sanitizeCompact(projectCode);
+  const normalizedMainCode = sanitizeCompact(mainCode);
+  const partNumberPrefix = `${normalizedProjectCode}-${normalizedMainCode}%`;
+  const rows = await db.prepare(`
+    SELECT project_code, main_code, sequence_no, part_number
+    FROM part_records
+    WHERE deleted_at IS NULL
+      AND (
+        (project_code = ? AND main_code = ?)
+        OR UPPER(part_number) LIKE ?
+      )
+
+    UNION ALL
+
+    SELECT pr.project_code, pr.main_code, pr.sequence_no, pr.part_number
+    FROM part_records pr
+    LEFT JOIN deleted_items di
+      ON di.entity_type = 'part'
+      AND di.entity_id = pr.id
+      AND di.republished_at IS NULL
+    WHERE pr.deleted_at IS NOT NULL
+      AND (di.id IS NULL OR di.released_for_reuse_at IS NULL)
+      AND (
+        (pr.project_code = ? AND pr.main_code = ?)
+        OR UPPER(pr.part_number) LIKE ?
+      )
+
+    UNION ALL
+
+    SELECT project_code, main_code, sequence_no, part_number
+    FROM part_requests
+    WHERE status = 'pending'
+      AND (
+        (project_code = ? AND main_code = ?)
+        OR UPPER(part_number) LIKE ?
+      )
+  `).all(
+    normalizedProjectCode,
+    normalizedMainCode,
+    partNumberPrefix,
+    normalizedProjectCode,
+    normalizedMainCode,
+    partNumberPrefix,
+    normalizedProjectCode,
+    normalizedMainCode,
+    partNumberPrefix
+  );
+
+  const sequences = new Set();
+  for (const row of rows) {
+    if (sanitizeCompact(row.project_code) === normalizedProjectCode
+      && sanitizeCompact(row.main_code) === normalizedMainCode
+      && /^\d{1,3}$/.test(String(row.sequence_no || ""))) {
+      sequences.add(padSequence(row.sequence_no));
+      continue;
+    }
+
+    const parsed = parsePartNumberComponents(row.part_number);
+    if (parsed.project_code === normalizedProjectCode && parsed.main_code === normalizedMainCode) {
+      sequences.add(parsed.sequence_no);
+    }
+  }
+  return sequences;
 }
 
 function getPartSequenceMinimum(projectCode, mainCode) {
@@ -2747,6 +2854,218 @@ async function isPartNumberUnavailable(partNumber, ignoreRequestId = null, ignor
     ignoreRequestId,
     ignorePartRevisionRequestId
   }));
+}
+
+async function getPartPreviewConflict(partNumber, projectCode, mainCode, sequenceNo, options = {}) {
+  if (!partNumber || !projectCode || !mainCode || !sequenceNo) return null;
+  const basePartNumber = buildPartNumberBase(projectCode, mainCode, sequenceNo);
+  const basePartNumberRevisionLike = `${basePartNumber}-%`;
+  const ignorePartId = options.ignorePartId || null;
+  const ignoreRequestId = options.ignoreRequestId || null;
+  const ignorePartRevisionRequestId = options.ignorePartRevisionRequestId || null;
+  const row = await db.prepare(`
+    WITH conflicts AS (
+      SELECT
+        1 AS priority,
+        'part_number' AS conflict_scope,
+        'active_record' AS conflict_type,
+        pr.id AS record_id,
+        NULL AS deleted_item_id,
+        NULL AS request_id,
+        NULL AS revision_request_id,
+        pr.part_number AS conflicting_part_number
+      FROM part_records pr
+      WHERE pr.part_number = ?
+        AND pr.deleted_at IS NULL
+        AND (? IS NULL OR pr.id <> ?)
+
+      UNION ALL
+
+      SELECT
+        2,
+        'part_number',
+        'deleted_record',
+        pr.id,
+        di.id,
+        NULL,
+        NULL,
+        di.display_key
+      FROM deleted_items di
+      LEFT JOIN part_records pr
+        ON pr.id = di.entity_id
+        AND di.entity_type = 'part'
+      WHERE di.entity_type = 'part'
+        AND di.display_key = ?
+        AND di.republished_at IS NULL
+        AND di.released_for_reuse_at IS NULL
+        AND (? IS NULL OR di.entity_id <> ?)
+
+      UNION ALL
+
+      SELECT
+        3,
+        'part_number',
+        'deleted_record',
+        pr.id,
+        NULL,
+        NULL,
+        NULL,
+        pr.part_number
+      FROM part_records pr
+      WHERE pr.part_number = ?
+        AND pr.deleted_at IS NOT NULL
+        AND (? IS NULL OR pr.id <> ?)
+
+      UNION ALL
+
+      SELECT
+        4,
+        'part_number',
+        'pending_request',
+        NULL,
+        NULL,
+        pr.id,
+        NULL,
+        pr.part_number
+      FROM part_requests pr
+      WHERE pr.part_number = ?
+        AND pr.status = 'pending'
+        AND (? IS NULL OR pr.id <> ?)
+
+      UNION ALL
+
+      SELECT
+        5,
+        'part_number',
+        'pending_revision_request',
+        NULL,
+        NULL,
+        NULL,
+        prr.id,
+        prr.requested_part_number
+      FROM part_revision_requests prr
+      WHERE prr.requested_part_number = ?
+        AND prr.status = 'pending'
+        AND (? IS NULL OR prr.id <> ?)
+
+      UNION ALL
+
+      SELECT
+        6,
+        'sequence',
+        'active_record',
+        pr.id,
+        NULL,
+        NULL,
+        NULL,
+        pr.part_number
+      FROM part_records pr
+      WHERE (
+          (pr.project_code = ? AND pr.main_code = ? AND pr.sequence_no = ?)
+          OR UPPER(pr.part_number) = ?
+          OR UPPER(pr.part_number) LIKE ?
+        )
+        AND pr.deleted_at IS NULL
+        AND (? IS NULL OR pr.id <> ?)
+
+      UNION ALL
+
+      SELECT
+        7,
+        'sequence',
+        'deleted_record',
+        pr.id,
+        di.id,
+        NULL,
+        NULL,
+        pr.part_number
+      FROM part_records pr
+      LEFT JOIN deleted_items di
+        ON di.entity_type = 'part'
+        AND di.entity_id = pr.id
+        AND di.republished_at IS NULL
+      WHERE (
+          (pr.project_code = ? AND pr.main_code = ? AND pr.sequence_no = ?)
+          OR UPPER(pr.part_number) = ?
+          OR UPPER(pr.part_number) LIKE ?
+        )
+        AND pr.deleted_at IS NOT NULL
+        AND (? IS NULL OR pr.id <> ?)
+        AND (di.id IS NULL OR di.released_for_reuse_at IS NULL)
+
+      UNION ALL
+
+      SELECT
+        8,
+        'sequence',
+        'pending_request',
+        NULL,
+        NULL,
+        pr.id,
+        NULL,
+        pr.part_number
+      FROM part_requests pr
+      WHERE (
+          (pr.project_code = ? AND pr.main_code = ? AND pr.sequence_no = ?)
+          OR UPPER(pr.part_number) = ?
+          OR UPPER(pr.part_number) LIKE ?
+        )
+        AND pr.status = 'pending'
+        AND (? IS NULL OR pr.id <> ?)
+    )
+    SELECT *
+    FROM conflicts
+    ORDER BY priority ASC
+    LIMIT 1
+  `).get(
+    partNumber,
+    ignorePartId,
+    ignorePartId,
+    partNumber,
+    ignorePartId,
+    ignorePartId,
+    partNumber,
+    ignorePartId,
+    ignorePartId,
+    partNumber,
+    ignoreRequestId,
+    ignoreRequestId,
+    partNumber,
+    ignorePartRevisionRequestId,
+    ignorePartRevisionRequestId,
+    projectCode,
+    mainCode,
+    sequenceNo,
+    basePartNumber,
+    basePartNumberRevisionLike,
+    ignorePartId,
+    ignorePartId,
+    projectCode,
+    mainCode,
+    sequenceNo,
+    basePartNumber,
+    basePartNumberRevisionLike,
+    ignorePartId,
+    ignorePartId,
+    projectCode,
+    mainCode,
+    sequenceNo,
+    basePartNumber,
+    basePartNumberRevisionLike,
+    ignoreRequestId,
+    ignoreRequestId
+  );
+
+  if (!row) return null;
+  return {
+    scope: row.conflict_scope,
+    type: row.conflict_type,
+    record_id: row.record_id,
+    deleted_item_id: row.deleted_item_id,
+    request_id: row.request_id,
+    revision_request_id: row.revision_request_id,
+    part_number: row.conflicting_part_number
+  };
 }
 
 async function getPartNumberConflict(partNumber, options = {}) {

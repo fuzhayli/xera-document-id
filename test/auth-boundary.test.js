@@ -63,6 +63,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
       ["GET", "/api/documents/archive"],
       ["GET", "/api/documents/export.xlsx"],
       ["GET", "/api/parts"],
+      ["GET", "/api/parts/request-context"],
       ["GET", "/api/parts/archive"],
       ["GET", "/api/parts/standard-hardware"],
       ["GET", "/api/parts/export.xlsx"],
@@ -90,7 +91,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     assert.equal(exportResponse.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     verificationDb = createDatabase({ url: `file:${databasePath}` });
-    await verifyX106MobileSystemProject(port, headers);
+    await verifyX106MobileSystemProject(verificationDb, port, headers);
     await verifyMrIncomingInspectionRequest(verificationDb, port, headers);
     await verifyEcRDocumentNamePropagation(verificationDb, port, headers);
     await verifyLegacyPendingQueues(verificationDb, port, headers);
@@ -109,7 +110,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
   }
 });
 
-async function verifyX106MobileSystemProject(port, headers) {
+async function verifyX106MobileSystemProject(db, port, headers) {
   const rulesResponse = await fetch(`http://127.0.0.1:${port}/api/parts/rules`, { headers });
   assert.equal(rulesResponse.status, 200);
   const rules = await rulesResponse.json();
@@ -135,6 +136,104 @@ async function verifyX106MobileSystemProject(port, headers) {
   const preview = await previewResponse.json();
   assert.equal(preview.valid, true);
   assert.equal(preview.part_number_preview, "X106-1001-01A");
+
+  const admin = await db.prepare("SELECT id FROM users WHERE email = ?").get("admin@xera.com.tr");
+  const now = "2026-07-30T00:00:00.000Z";
+  const activeRecord = await db.prepare(`
+    INSERT INTO part_records (
+      source, project_code, main_code, sequence_no, part_number, revision_code,
+      revision_mode, part_name, description, main_category, sub_category, created_at
+    ) VALUES ('excel', 'X106', '1', '001', 'X106-1001-01A', '01A',
+      'released', 'MOBILE_ACTIVE', 'Active Mobile System part', 'Finished Product', 'Test', ?)
+  `).run(now);
+  const lockedDeletedRecord = await db.prepare(`
+    INSERT INTO part_records (
+      source, project_code, main_code, sequence_no, part_number, revision_code,
+      revision_mode, part_name, description, main_category, sub_category,
+      created_at, deleted_at, deleted_by_user_id
+    ) VALUES ('excel', 'X106', '1', '002', 'X106-1002-01A', '01A',
+      'released', 'MOBILE_DELETED_LOCKED', 'Locked deleted Mobile System part',
+      'Finished Product', 'Test', ?, ?, ?)
+  `).run(now, now, admin.id);
+  const releasedDeletedRecord = await db.prepare(`
+    INSERT INTO part_records (
+      source, project_code, main_code, sequence_no, part_number, revision_code,
+      revision_mode, part_name, description, main_category, sub_category,
+      created_at, deleted_at, deleted_by_user_id
+    ) VALUES ('excel', 'X106', '1', '003', 'X106-1003-01B', '01B',
+      'released', 'MOBILE_DELETED_RELEASED', 'Released deleted Mobile System part',
+      'Finished Product', 'Test', ?, ?, ?)
+  `).run(now, now, admin.id);
+  await db.prepare(`
+    INSERT INTO deleted_items (
+      entity_type, entity_id, display_key, record_json, deleted_by_user_id,
+      deleted_at, released_for_reuse_by_user_id, released_for_reuse_at
+    ) VALUES ('part', ?, 'X106-1002-01A', '{}', ?, ?, NULL, NULL)
+  `).run(Number(lockedDeletedRecord.lastInsertRowid), admin.id, now);
+  await db.prepare(`
+    INSERT INTO deleted_items (
+      entity_type, entity_id, display_key, record_json, deleted_by_user_id,
+      deleted_at, released_for_reuse_by_user_id, released_for_reuse_at
+    ) VALUES ('part', ?, 'X106-1003-01B', '{}', ?, ?, ?, ?)
+  `).run(Number(releasedDeletedRecord.lastInsertRowid), admin.id, now, admin.id, now);
+  await db.prepare(`
+    INSERT INTO part_requests (
+      status, project_code, main_code, sequence_no, part_number, revision_code,
+      revision_mode, part_name, description, main_category, sub_category,
+      requested_by_user_id, created_at, updated_at, payload_json
+    ) VALUES ('pending', 'X106', '1', '004', 'X106-1004-01A', '01A',
+      'released', 'MOBILE_PENDING', 'Pending Mobile System part',
+      'Finished Product', 'Test', ?, ?, ?, '{}')
+  `).run(admin.id, now, now);
+
+  const contextResponse = await fetch(`http://127.0.0.1:${port}/api/parts/request-context`, { headers });
+  assert.equal(contextResponse.status, 200);
+  const context = await contextResponse.json();
+  const contextPart = context.parts.find(part => part.part_number === "X106-1001-01A");
+  assert.deepEqual(Object.keys(contextPart).sort(), [
+    "description",
+    "main_code",
+    "part_name",
+    "part_number",
+    "project_code",
+    "sequence_no",
+    "sub_category"
+  ]);
+  assert.equal(context.parts.some(part => part.part_number === "X106-1002-01A"), false);
+
+  const nextPreviewResponse = await fetch(`http://127.0.0.1:${port}/api/parts/preview`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      project_code: "X106",
+      main_code: "1",
+      revision_mode: "released",
+      revision_code: "01A",
+      part_name: "MOBILE_NEXT_TEST_PART",
+      description: "Next Mobile System test part"
+    })
+  });
+  assert.equal(nextPreviewResponse.status, 200);
+  const nextPreview = await nextPreviewResponse.json();
+  assert.equal(nextPreview.part_number_preview, "X106-1003-01A");
+
+  const sequenceConflictResponse = await fetch(`http://127.0.0.1:${port}/api/parts/preview`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      project_code: "X106",
+      main_code: "1",
+      part_number: "X106-1001-01B",
+      revision_mode: "released",
+      revision_code: "01B",
+      part_name: "MOBILE_SEQUENCE_CONFLICT",
+      description: "Sequence conflict test"
+    })
+  });
+  assert.equal(sequenceConflictResponse.status, 422);
+  assert.match((await sequenceConflictResponse.json()).errors.join(" "), /sequence is already approved/);
+
+  assert.ok(Number(activeRecord.lastInsertRowid) > 0);
 }
 
 async function verifyMrIncomingInspectionRequest(db, port, headers) {
