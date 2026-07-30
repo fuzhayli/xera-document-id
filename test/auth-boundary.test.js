@@ -90,6 +90,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     assert.equal(exportResponse.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     verificationDb = createDatabase({ url: `file:${databasePath}` });
+    await verifyX106MobileSystemProject(port, headers);
     await verifyMrIncomingInspectionRequest(verificationDb, port, headers);
     await verifyEcRDocumentNamePropagation(verificationDb, port, headers);
     await verifyLegacyPendingQueues(verificationDb, port, headers);
@@ -107,6 +108,34 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
     }
   }
 });
+
+async function verifyX106MobileSystemProject(port, headers) {
+  const rulesResponse = await fetch(`http://127.0.0.1:${port}/api/parts/rules`, { headers });
+  assert.equal(rulesResponse.status, 200);
+  const rules = await rulesResponse.json();
+  assert.deepEqual(
+    rules.projects.find(project => project.code === "X106"),
+    { code: "X106", description: "Mobile System" }
+  );
+
+  const previewResponse = await fetch(`http://127.0.0.1:${port}/api/parts/preview`, {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      project_code: "X106",
+      main_code: "1",
+      revision_mode: "released",
+      revision_code: "01A",
+      part_name: "MOBILE_SYSTEM_TEST_PART",
+      description: "Mobile System test part",
+      sub_category: "Test"
+    })
+  });
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json();
+  assert.equal(preview.valid, true);
+  assert.equal(preview.part_number_preview, "X106-1001-01A");
+}
 
 async function verifyMrIncomingInspectionRequest(db, port, headers) {
   const body = {

@@ -1,4 +1,5 @@
 const state = {
+  projects: [],
   parts: [],
   hardware: [],
   activeTab: "materials",
@@ -29,6 +30,7 @@ const PROJECT_NAME_BY_CODE = {
   "1504": "VR10X",
   X104: "LFDH",
   X105: "GR20X",
+  X106: "Mobile System",
   "9010": "GR10X (other)",
   "1500": "GR10X (other)"
 };
@@ -288,10 +290,12 @@ async function loadData() {
   elements.partsState.textContent = "Loading";
 
   try {
-    const [parts, hardware] = await Promise.all([
+    const [rules, parts, hardware] = await Promise.all([
+      apiGet("/api/parts/rules"),
       apiGet("/api/parts"),
       apiGet("/api/parts/standard-hardware")
     ]);
+    state.projects = rules.projects || [];
     state.parts = parts.parts || [];
     state.hardware = hardware.hardware || [];
     populateMaterialFilters();
@@ -304,6 +308,7 @@ async function loadData() {
   } catch (error) {
     setApiStatus(false);
     elements.partsState.textContent = error.message;
+    state.projects = [];
     state.parts = [];
     state.hardware = [];
     renderParts();
@@ -324,8 +329,16 @@ function setTab(tab) {
 }
 
 function populateMaterialFilters() {
-  populateSelect(elements.projectNameFilter, uniqueSorted(state.parts.map(part => getProjectName(part.project_code))));
-  populateSelect(elements.projectFilter, uniqueSorted(state.parts.map(part => part.project_code)));
+  const projectCodes = uniqueSorted([
+    ...state.projects.map(project => project.code),
+    ...state.parts.map(part => part.project_code)
+  ]);
+  const projectNames = uniqueSorted([
+    ...state.projects.map(project => getProjectName(project.code) || project.description),
+    ...state.parts.map(part => getProjectName(part.project_code))
+  ]);
+  populateSelect(elements.projectNameFilter, projectNames);
+  populateSelect(elements.projectFilter, projectCodes);
   populateSelect(elements.mainFilter, uniqueSorted(state.parts.map(part => part.main_category)));
   populateSelect(elements.subFilter, uniqueSorted(state.parts.map(part => part.sub_category)));
 }

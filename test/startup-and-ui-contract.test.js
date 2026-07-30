@@ -5,6 +5,27 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 
+test("X106 Mobile System is available across part project rules and filters", () => {
+  const { PART_PROJECTS, PART_PROJECT_CODES } = require("../server/rules");
+  const partsHtml = fs.readFileSync(path.join(root, "public", "parts.html"), "utf8");
+  const partsSource = fs.readFileSync(path.join(root, "public", "parts.js"), "utf8");
+  const archiveHtml = fs.readFileSync(path.join(root, "public", "parts-archive.html"), "utf8");
+  const archiveSource = fs.readFileSync(path.join(root, "public", "parts-archive.js"), "utf8");
+
+  assert.deepEqual(
+    PART_PROJECTS.find(project => project.code === "X106"),
+    { code: "X106", description: "Mobile System" }
+  );
+  assert.ok(PART_PROJECT_CODES.includes("X106"));
+  assert.match(partsSource, /X106:\s*"Mobile System"/);
+  assert.match(partsSource, /api\/parts\/rules/);
+  assert.match(partsSource, /\.\.\.state\.projects\.map\(project => project\.code\)/);
+  assert.match(archiveSource, /api\/parts\/rules/);
+  assert.match(archiveSource, /`\$\{code\} - \$\{project\.description\}`/);
+  assert.match(partsHtml, /parts\.js\?v=x106-mobile-system-20260730/);
+  assert.match(archiveHtml, /parts-archive\.js\?v=x106-mobile-system-20260730/);
+});
+
 test("normal startup does not run maintenance or source patch scripts", () => {
   const packageJson = require("../package.json");
   assert.equal(packageJson.scripts.start, "node --no-warnings server/index.js");

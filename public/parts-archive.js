@@ -1,4 +1,5 @@
 const state = {
+  projects: [],
   archive: []
 };
 
@@ -51,7 +52,11 @@ async function loadArchive() {
   elements.archiveState.textContent = "Loading";
 
   try {
-    const data = await apiGet("/api/parts/archive");
+    const [rules, data] = await Promise.all([
+      apiGet("/api/parts/rules"),
+      apiGet("/api/parts/archive")
+    ]);
+    state.projects = rules.projects || [];
     state.archive = data.archive || [];
     populateFilters();
     renderArchive();
@@ -60,13 +65,33 @@ async function loadArchive() {
   } catch (error) {
     setApiStatus(false);
     elements.archiveState.textContent = error.message;
+    state.projects = [];
+    state.archive = [];
     renderArchive();
   }
 }
 
 function populateFilters() {
-  populateSelect(elements.projectFilter, uniqueSorted(state.archive.map(record => record.project_code)));
+  const projectCodes = uniqueSorted([
+    ...state.projects.map(project => project.code),
+    ...state.archive.map(record => record.project_code)
+  ]);
+  populateProjectSelect(elements.projectFilter, projectCodes);
   populateSelect(elements.mainFilter, uniqueSorted(state.archive.map(record => record.main_category)));
+}
+
+function populateProjectSelect(select, projectCodes) {
+  const selected = select.value;
+  const projectByCode = new Map(state.projects.map(project => [project.code, project]));
+  select.innerHTML = '<option value="">All</option>';
+  for (const code of projectCodes) {
+    const option = document.createElement("option");
+    const project = projectByCode.get(code);
+    option.value = code;
+    option.textContent = project ? `${code} - ${project.description}` : code;
+    select.appendChild(option);
+  }
+  if (projectCodes.includes(selected)) select.value = selected;
 }
 
 function populateSelect(select, values) {

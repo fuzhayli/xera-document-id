@@ -92,6 +92,7 @@ const PART_PROJECTS = [
   { code: "X103", description: "6Way (Turkey)" },
   { code: "X104", description: "Long Format Detector (Turkey)" },
   { code: "X105", description: "GR20X" },
+  { code: "X106", description: "Mobile System" },
   { code: "1501", description: "GR10X (Korea)" }
 ];
 
