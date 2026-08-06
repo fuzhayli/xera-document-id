@@ -147,6 +147,13 @@
   function applyLegacyReadOnlyMode(config) {
     if (!config.legacy_read_only) return;
     document.body.classList.add("legacy-read-only");
+    document.querySelectorAll('a[href="/part-request.html"]').forEach(link => {
+      link.href = config.erp_url;
+      const title = link.querySelector("strong");
+      const detail = link.querySelector("small");
+      if (title) title.textContent = "New Request (ERP)";
+      if (detail) detail.textContent = "Document and part codes";
+    });
     renderLegacyReadOnlyBanner(config.erp_url);
   }
 

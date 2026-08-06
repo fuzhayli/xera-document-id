@@ -70,6 +70,7 @@ test("read-only UI advertises ERP and removes legacy mutation controls", () => {
 
   assert.match(uiSource, /Read-only archive/);
   assert.match(uiSource, /New Request \(ERP\)/);
+  assert.match(uiSource, /Document and part codes/);
   assert.match(uiSource, /window\.location\.replace\(config\.erp_url\)/);
   assert.match(styles, /body\.legacy-read-only #documentRevisionRequestBtn/);
   assert.match(styles, /body\.legacy-read-only #partRevisionRequestBtn/);
