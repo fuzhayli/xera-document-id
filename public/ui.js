@@ -60,6 +60,11 @@
   document.addEventListener("keydown", handleNotificationCenterKeydown);
 
   const API_BASE = window.location.protocol === "file:" ? "http://localhost:32680" : "";
+  const DEFAULT_ERP_URL = "http://10.12.40.173:8080/app/xera-control-center";
+  let publicConfig = {
+    legacy_read_only: false,
+    erp_url: DEFAULT_ERP_URL
+  };
 
   window.XeraSearchScopes = {
     getSelected(scopeId) {
@@ -94,14 +99,71 @@
   };
 
   async function initChrome() {
-    if (document.body.classList.contains("auth-page") || document.body.classList.contains("embed-mode") || isEmbedRequest()) return;
+    if (document.body.classList.contains("auth-page")) return;
+
+    publicConfig = await loadPublicConfig();
+    window.XeraCutover = publicConfig;
+    if (redirectLegacyRequestPage(publicConfig)) return;
+    if (document.body.classList.contains("embed-mode") || isEmbedRequest()) return;
 
     document.body.classList.add("app-page");
     wrapExistingContent();
-    buildSidebar();
+    buildSidebar(publicConfig);
     markActiveNav();
+    applyLegacyReadOnlyMode(publicConfig);
     await applyUserChrome();
     setupThemeToggler();
+  }
+
+  async function loadPublicConfig() {
+    try {
+      const response = await fetch(`${API_BASE}/api/public-config`, {
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+      if (!response.ok) throw new Error("Public configuration could not be loaded.");
+      const config = await response.json();
+      return {
+        ...config,
+        legacy_read_only: config.legacy_read_only === true,
+        erp_url: config.erp_url || DEFAULT_ERP_URL
+      };
+    } catch {
+      return { legacy_read_only: false, erp_url: DEFAULT_ERP_URL };
+    }
+  }
+
+  function redirectLegacyRequestPage(config) {
+    if (!config.legacy_read_only) return false;
+    const path = window.location.pathname;
+    const view = new URLSearchParams(window.location.search).get("view");
+    if (path === "/part-request.html" || (["/", "/index.html"].includes(path) && view === "new")) {
+      window.location.replace(config.erp_url);
+      return true;
+    }
+    return false;
+  }
+
+  function applyLegacyReadOnlyMode(config) {
+    if (!config.legacy_read_only) return;
+    document.body.classList.add("legacy-read-only");
+    renderLegacyReadOnlyBanner(config.erp_url);
+  }
+
+  function renderLegacyReadOnlyBanner(erpUrl) {
+    const appMain = document.querySelector(".app-main");
+    if (!appMain || document.querySelector(".legacy-read-only-banner")) return;
+    const banner = document.createElement("section");
+    banner.className = "legacy-read-only-banner";
+    banner.setAttribute("role", "status");
+    banner.innerHTML = `
+      <div>
+        <strong>Read-only archive</strong>
+        <span>Lists, archives, search and exports remain available here. Create, revise and administer records in XERA ERP.</span>
+      </div>
+      <a class="primary-btn legacy-erp-link" href="${escapeHtml(erpUrl)}">Open XERA ERP</a>
+    `;
+    appMain.insertBefore(banner, appMain.firstChild);
   }
 
   function isEmbedRequest() {
@@ -173,8 +235,12 @@
     document.body.insertBefore(appMain, document.body.firstChild);
   }
 
-  function buildSidebar() {
+  function buildSidebar(config = publicConfig) {
     if (document.querySelector(".app-sidebar")) return;
+
+    const navGroups = config.legacy_read_only
+      ? buildReadOnlyNavGroups(config.erp_url)
+      : NAV_GROUPS;
 
     const sidebar = document.createElement("aside");
     sidebar.className = "app-sidebar";
@@ -183,7 +249,7 @@
         <img src="/logo.png" alt="XERA">
       </a>
       <nav class="sidebar-nav" aria-label="Primary navigation">
-        ${NAV_GROUPS.map(group => `
+        ${navGroups.map(group => `
           <section class="sidebar-group${group.items.every(item => item.permissions) ? " hidden" : ""}">
             <span class="sidebar-group-label">${group.label}</span>
             <div class="sidebar-group-links">
@@ -204,9 +270,23 @@
     document.body.insertBefore(sidebar, document.body.firstChild);
   }
 
+  function buildReadOnlyNavGroups(erpUrl) {
+    return NAV_GROUPS
+      .filter(group => group.label !== "Admin")
+      .map(group => ({
+        ...group,
+        items: group.label === "Requests"
+          ? [
+              { href: erpUrl, label: "New Request (ERP)", icon: "plus", external: true },
+              ...group.items.filter(item => item.view === "my")
+            ]
+          : group.items
+      }));
+  }
+
   function renderNavItem(item) {
     return `
-      <a class="sidebar-link${item.permissions ? " permission-only hidden" : ""}" href="${item.href}" data-match="${(item.match || []).join("|")}" data-view="${item.view || ""}" data-permissions="${(item.permissions || []).join("|")}">
+      <a class="sidebar-link${item.permissions ? " permission-only hidden" : ""}" href="${item.href}"${item.external ? ' data-erp-link="true"' : ""} data-match="${(item.match || []).join("|")}" data-view="${item.view || ""}" data-permissions="${(item.permissions || []).join("|")}">
         <span class="sidebar-icon">${ICONS[item.icon]}</span>
         <span>${item.label}</span>
       </a>

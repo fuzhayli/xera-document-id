@@ -60,6 +60,11 @@ const ALLOW_PUBLIC_SIGNUP = !parseBooleanEnv(
   process.env.DISABLE_PUBLIC_SIGNUP,
   NODE_ENV === "production"
 );
+const ERP_URL = process.env.ERP_URL || "http://10.12.40.173:8080/app/xera-control-center";
+const LEGACY_READ_ONLY_MODE = parseBooleanEnv(
+  process.env.LEGACY_READ_ONLY_MODE,
+  NODE_ENV === "production"
+);
 const APP_TIME_ZONE = process.env.APP_TIME_ZONE || "Europe/Istanbul";
 const MR_INCOMING_INSPECTION_REFERENCE_TYPES = new Set(["incominginspection", "incoming-inspection", "incoming"]);
 const WORKBOOK_ZIP_ENTRY_LIMIT = 2048;
@@ -101,7 +106,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/public-config") {
-      return sendJson(res, 200, { allow_public_signup: ALLOW_PUBLIC_SIGNUP });
+      return sendJson(res, 200, {
+        allow_public_signup: ALLOW_PUBLIC_SIGNUP,
+        legacy_read_only: LEGACY_READ_ONLY_MODE,
+        erp_url: ERP_URL
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/signup.html" && !ALLOW_PUBLIC_SIGNUP) {
@@ -115,6 +124,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/health") {
       await db.prepare("SELECT 1 AS ok").get();
       return sendJson(res, 200, { ok: true });
+    }
+
+    if (LEGACY_READ_ONLY_MODE && isBlockedByErpCutover(req.method, url.pathname)) {
+      return sendJson(res, 409, {
+        error: "erp_cutover_read_only",
+        message: "This legacy site is read-only. Create, revise and administer records in XERA ERP.",
+        erp_url: ERP_URL
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/signup") {
@@ -650,6 +667,15 @@ const server = http.createServer(async (req, res) => {
     });
   }
 });
+
+function isBlockedByErpCutover(method, pathname) {
+  if (!pathname.startsWith("/api/") || !["POST", "PUT", "PATCH", "DELETE"].includes(method)) return false;
+  return ![
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/parts/custom-export.xlsx"
+  ].includes(pathname) && !/^\/api\/notifications\/\d+\/read$/.test(pathname);
+}
 
 startServer().catch(error => {
   console.error("Failed to start XERA Document ID API.");

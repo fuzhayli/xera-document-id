@@ -13,6 +13,10 @@ services:
         value: production
       - key: DISABLE_PUBLIC_SIGNUP
         value: "true"
+      - key: LEGACY_READ_ONLY_MODE
+        value: "true"
+      - key: ERP_URL
+        value: http://10.12.40.173:8080/app/xera-control-center
       - key: APP_TIME_ZONE
         value: Europe/Istanbul
       - key: INITIAL_ADMIN_PASSWORD

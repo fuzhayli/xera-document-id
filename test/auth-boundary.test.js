@@ -25,6 +25,7 @@ test("auth boundaries and part/document edit rollbacks hold end to end", { timeo
       TURSO_AUTH_TOKEN: "",
       INITIAL_ADMIN_PASSWORD: password,
       DISABLE_PUBLIC_SIGNUP: "true",
+      LEGACY_READ_ONLY_MODE: "false",
       NODE_ENV: "production",
       APP_TIME_ZONE: "Europe/Istanbul"
     },

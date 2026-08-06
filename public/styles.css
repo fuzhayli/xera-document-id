@@ -100,6 +100,84 @@ p {
   display: none !important;
 }
 
+.legacy-read-only-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 18px 32px 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(230, 0, 57, .24);
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(230, 0, 57, .09), rgba(230, 0, 57, .025));
+  box-shadow: var(--shadow-soft);
+}
+
+.legacy-read-only-banner > div {
+  display: grid;
+  gap: 4px;
+}
+
+.legacy-read-only-banner strong {
+  color: var(--primary);
+  font-size: 15px;
+}
+
+.legacy-read-only-banner span {
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.legacy-erp-link {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+
+body.legacy-read-only #newRequestViewBtn,
+body.legacy-read-only #requestForm,
+body.legacy-read-only #openRequestModalBtn,
+body.legacy-read-only #openRequestModalPanelBtn,
+body.legacy-read-only #openPartRequestTopBtn,
+body.legacy-read-only #openPartRequestBtn,
+body.legacy-read-only #importBtn,
+body.legacy-read-only #documentEditBtn,
+body.legacy-read-only #documentRevisionRequestBtn,
+body.legacy-read-only #documentDeleteBtn,
+body.legacy-read-only #documentEditForm,
+body.legacy-read-only #documentDeleteConfirm,
+body.legacy-read-only #partEditBtn,
+body.legacy-read-only #partRevisionRequestBtn,
+body.legacy-read-only #partDeleteBtn,
+body.legacy-read-only #partEditForm,
+body.legacy-read-only #partDeleteConfirm,
+body.legacy-read-only #createUserForm,
+body.legacy-read-only #notificationEditForm,
+body.legacy-read-only #releaseItemForReuseBtn,
+body.legacy-read-only #republishDeletedItemBtn,
+body.legacy-read-only [data-action^="approve"],
+body.legacy-read-only [data-action^="reject"],
+body.legacy-read-only [data-action^="notification-"],
+body.legacy-read-only [data-action="revision"],
+body.legacy-read-only [data-action="rename"],
+body.legacy-read-only [data-action="edit"],
+body.legacy-read-only [data-action="permissions"],
+body.legacy-read-only [data-action="password"] {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  .legacy-read-only-banner {
+    align-items: stretch;
+    flex-direction: column;
+    margin: 14px 16px 0;
+  }
+
+  .legacy-erp-link {
+    justify-content: center;
+  }
+}
+
 /* Shared application chrome */
 .app-page {
   display: grid;
